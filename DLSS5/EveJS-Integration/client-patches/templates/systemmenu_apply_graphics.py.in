@@ -1,0 +1,314 @@
+class SystemMenu(object):
+
+    def ApplyGraphicsSettings(self):
+
+        # Source template copied verbatim into both Python 2.7 client methods.
+        # NR authority is the loaded, process-local native bridge, never shared files.
+        def getDLSS5NativeBridge():
+            ctypes = __import__('ctypes')
+            os = __import__('os')
+            cached = getattr(gfxsettings, '_dlss5NativeNRBridgeV1', None)
+            if cached is not None:
+                return cached
+            kernel32 = ctypes.windll.kernel32
+            modulePath = ctypes.create_unicode_buffer(32768)
+            getModuleFileName = kernel32.GetModuleFileNameW
+            getModuleFileName.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint32]
+            getModuleFileName.restype = ctypes.c_uint32
+            length = getModuleFileName(None, modulePath, len(modulePath))
+            if not length or length >= len(modulePath):
+                logger.error('DLSS5 guard v12: cannot identify this executable')
+                return None
+            proxyPath = os.path.join(os.path.dirname(modulePath.value), u'dxgi.dll')
+            getModuleHandle = kernel32.GetModuleHandleW
+            getModuleHandle.argtypes = [ctypes.c_wchar_p]
+            getModuleHandle.restype = ctypes.c_void_p
+            proxy = getModuleHandle(proxyPath)
+            if not proxy:
+                logger.error('DLSS5 guard v12: local native proxy is not loaded')
+                return None
+            loadedPath = ctypes.create_unicode_buffer(32768)
+            length = getModuleFileName(ctypes.c_void_p(proxy), loadedPath, len(loadedPath))
+            if not length or length >= len(loadedPath) or os.path.normcase(os.path.abspath(loadedPath.value)) != os.path.normcase(os.path.abspath(proxyPath)):
+                logger.error('DLSS5 guard v12: loaded native proxy identity mismatch')
+                return None
+            getProcAddress = kernel32.GetProcAddress
+            getProcAddress.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+            getProcAddress.restype = ctypes.c_void_p
+            queryAddress = getProcAddress(ctypes.c_void_p(proxy), b'EveJSDLSS5QueryNRState')
+            injectAddress = getProcAddress(ctypes.c_void_p(proxy), b'EveJSDLSS5InjectF6State')
+            if not queryAddress or not injectAddress:
+                logger.error('DLSS5 guard v12: required process-local state/control API is missing')
+                return None
+
+            class NativeNRState(ctypes.Structure):
+                _fields_ = [('abiVersion', ctypes.c_uint32), ('state', ctypes.c_uint32),
+                            ('stateSequence', ctypes.c_uint64), ('toggleSequence', ctypes.c_uint64),
+                            ('lastToggleState', ctypes.c_uint32), ('addonEpoch', ctypes.c_uint32)]
+
+            if ctypes.sizeof(NativeNRState) != 32:
+                logger.error('DLSS5 guard v12: native snapshot layout mismatch')
+                return None
+            query = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(NativeNRState), ctypes.c_uint32)(queryAddress)
+            inject = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_int)(injectAddress)
+            cached = (query, inject, NativeNRState)
+            gfxsettings._dlss5NativeNRBridgeV1 = cached
+            return cached
+
+        def readDLSS5NativeSnapshot():
+            ctypes = __import__('ctypes')
+            bridge = getDLSS5NativeBridge()
+            if bridge is None:
+                return None
+            targetWindow = trinity.app.GetHwndAsLong()
+            if not targetWindow:
+                return None
+            snapshot = bridge[2]()
+            if not bridge[0](ctypes.c_void_p(targetWindow), ctypes.byref(snapshot), ctypes.sizeof(snapshot)):
+                logger.error('DLSS5 guard v12: this process could not query its own NR state')
+                return None
+            if snapshot.abiVersion != 1 or snapshot.state not in (0, 1, 2) or snapshot.lastToggleState not in (0, 1, 2):
+                logger.error('DLSS5 guard v12: native snapshot ABI/state is invalid')
+                return None
+            return {'state': snapshot.state, 'stateSequence': snapshot.stateSequence,
+                    'toggleSequence': snapshot.toggleSequence,
+                    'lastToggleState': snapshot.lastToggleState, 'addonEpoch': snapshot.addonEpoch}
+
+        def waitForDLSS5ToggleAcknowledgement(before, timeoutMs):
+            polls = 0
+            while polls < timeoutMs // 50:
+                current = readDLSS5NativeSnapshot()
+                if current is None or current['addonEpoch'] != before['addonEpoch'] or current['state'] == 0:
+                    logger.error('DLSS5 guard v12: native state disappeared or addon lifetime changed during toggle')
+                    return None
+                delta = current['toggleSequence'] - before['toggleSequence']
+                if delta == 1:
+                    if current['state'] != current['lastToggleState']:
+                        logger.error('DLSS5 guard v12: observed state changed after toggle acknowledgement')
+                        return None
+                    return 'ON' if current['state'] == 2 else 'OFF'
+                if delta != 0:
+                    logger.error('DLSS5 guard v12: overlapping or invalid toggle acknowledgement sequence')
+                    return None
+                blue.synchro.SleepWallclock(50)
+                polls += 1
+            return None
+
+        def toggleDLSS5NeuralRenderingAndReadState(attempt):
+            ctypes = __import__('ctypes')
+            bridge = getDLSS5NativeBridge()
+            before = readDLSS5NativeSnapshot()
+            if bridge is None or before is None or before['state'] == 0:
+                logger.error('DLSS5 guard v12: refusing a blind toggle without known local NR state')
+                return None
+            targetWindow = ctypes.c_void_p(trinity.app.GetHwndAsLong())
+            logger.info('DLSS5 guard v12: process-local F6 attempt %d, epoch %s, sequence %s', attempt, before['addonEpoch'], before['toggleSequence'])
+            if not bridge[1](targetWindow, 1):
+                logger.error('DLSS5 guard v12: native bridge rejected F6 DOWN')
+                return None
+            acknowledgedState = None
+            keyUpInjected = False
+            try:
+                acknowledgedState = waitForDLSS5ToggleAcknowledgement(before, 2500)
+            finally:
+                keyUpInjected = bool(bridge[1](targetWindow, 0))
+            if not keyUpInjected:
+                logger.error('DLSS5 guard v12: native bridge rejected F6 UP')
+                return None
+            if acknowledgedState is None:
+                logger.error('DLSS5 guard v12: no unambiguous local RenoDX acknowledgement')
+            else:
+                logger.info('DLSS5 guard v12: this process acknowledged NR %s', acknowledgedState)
+            return acknowledgedState
+
+        def readCurrentDLSS5NeuralRenderingState():
+            snapshot = readDLSS5NativeSnapshot()
+            if snapshot is None or snapshot['state'] == 0:
+                return None
+            return 'ON' if snapshot['state'] == 2 else 'OFF'
+
+        def readDLSS5NeuralRenderingPreference():
+            wanted = getattr(gfxsettings, '_dlss5NRWantedV12', None)
+            return wanted if wanted in ('ON', 'OFF') else None
+
+        def writeDLSS5NeuralRenderingPreference(enabled):
+            gfxsettings._dlss5NRWantedV12 = 'ON' if enabled else 'OFF'
+            return True
+
+        def ensureDLSS5NeuralRenderingState(enabled):
+            desiredState = 'ON' if enabled else 'OFF'
+            currentState = readCurrentDLSS5NeuralRenderingState()
+            # RenoDX initialization may still be emitting its first state report.
+            polls = 0
+            while currentState is None and polls < 50:
+                blue.synchro.SleepWallclock(50)
+                polls += 1
+                currentState = readCurrentDLSS5NeuralRenderingState()
+            if currentState is None:
+                logger.error('DLSS5 guard v12: local NR state unknown; graphics mutation blocked')
+                return False
+            if currentState == desiredState:
+                return True
+            for attempt in (1, 2):
+                acknowledgedState = toggleDLSS5NeuralRenderingAndReadState(attempt)
+                if acknowledgedState is None:
+                    return False
+                if acknowledgedState == desiredState:
+                    return True
+            logger.error('DLSS5 guard v12: could not confirm requested local NR state')
+            return False
+
+        # Per-call burst state: do not mistake our own temporary NR OFF state
+        # for a new user preference when a second apply has been coalesced.
+        transitionState = {'preferenceCaptured': False, 'needsRearm': False}
+
+        def waitForGraphicsDeviceReady(targetTechnique):
+            readinessPolls = 0
+            while @LOCAL:ready_condition@:
+                if readinessPolls >= 400:
+                    logger.error('DLSS5 transition guard v10 candidate: renderer did not become ready within 400 polls; leaving NR unrearmed')
+                    return False
+                blue.synchro.SleepWallclock(25)
+                readinessPolls += 1
+            return True
+
+        def applyGraphicsSettingsPass():
+            @LOCAL:graphics_setup@
+
+            currentUpscalingTechnique = @LOCAL:current_query@
+            pendingUpscalingTechnique = gfxsettings.GetPendingOrCurrent(gfxsettings.GFX_UPSCALING_TECHNIQUE)
+            pendingUpscalingSetting = gfxsettings.GetPendingOrCurrent(gfxsettings.GFX_UPSCALING_SETTING)
+            pendingFrameGeneration = gfxsettings.GetPendingOrCurrent(gfxsettings.GFX_FRAMEGENERATION_ENABLED)
+            hasPendingUpscalingChange = pendingUpscalingTechnique != @LOCAL:target_getter@ or pendingUpscalingSetting != @LOCAL:preset_getter@ or pendingFrameGeneration != @LOCAL:framegen_getter@
+            resourceSettings = (gfxsettings.GFX_SHADER_QUALITY, gfxsettings.GFX_TEXTURE_QUALITY)
+            hasPendingResourceChange = any(gfxsettings.GetPendingOrCurrent(key) != gfxsettings.Get(key) for key in resourceSettings)
+            involvesDLSS = currentUpscalingTechnique == gfxsettings.GFX_UPSCALING_TECHNIQUE_DLSS or pendingUpscalingTechnique == gfxsettings.GFX_UPSCALING_TECHNIQUE_DLSS
+            if (hasPendingUpscalingChange or hasPendingResourceChange) and involvesDLSS:
+                if currentUpscalingTechnique == gfxsettings.GFX_UPSCALING_TECHNIQUE_DLSS and not transitionState['preferenceCaptured']:
+                    currentNeuralRenderingState = readCurrentDLSS5NeuralRenderingState()
+                    if currentNeuralRenderingState is None:
+                        logger.error('DLSS5 transition guard v10 candidate: blocked graphics apply because the user NR preference could not be captured')
+                        return False
+                    if not writeDLSS5NeuralRenderingPreference(currentNeuralRenderingState == 'ON'):
+                        logger.error('DLSS5 transition guard v10 candidate: blocked graphics apply because the user NR preference could not be saved')
+                        return False
+                    transitionState['preferenceCaptured'] = True
+                if not ensureDLSS5NeuralRenderingState(False):
+                    logger.error('DLSS5 transition guard v10 candidate: blocked graphics apply because NR OFF was not confirmed')
+                    return False
+                transitionState['needsRearm'] = True
+                logger.info('DLSS5 transition guard v10 candidate: waiting 5000 ms after confirmed NR OFF before upscaler or resource changes')
+                blue.synchro.SleepWallclock(5000)
+                # Physical F6 remains available during the yield. If it has
+                # invalidated OFF, stop instead of mutating under active NR or
+                # fighting the user's input with another automatic toggle.
+                if readCurrentDLSS5NeuralRenderingState() != 'OFF':
+                    logger.error('DLSS5 transition guard v10 candidate: blocked graphics apply because NR OFF is no longer confirmed after settling; retry the graphics change')
+                    return False
+            # The pending target can change during the disarm yield. Only an
+            # actual entry from a different renderer technique resets manual
+            # F6 intent; cancelling an exit while still on DLSS must not.
+            latestUpscalingTechnique = gfxsettings.GetPendingOrCurrent(gfxsettings.GFX_UPSCALING_TECHNIQUE)
+            upscalingSettings = (gfxsettings.GFX_UPSCALING_TECHNIQUE, gfxsettings.GFX_UPSCALING_SETTING, gfxsettings.GFX_FRAMEGENERATION_ENABLED)
+            hasLatestUpscalingChange = any(gfxsettings.GetPendingOrCurrent(key) != gfxsettings.Get(key) for key in upscalingSettings)
+            if currentUpscalingTechnique != gfxsettings.GFX_UPSCALING_TECHNIQUE_DLSS and latestUpscalingTechnique == gfxsettings.GFX_UPSCALING_TECHNIQUE_DLSS and hasLatestUpscalingChange:
+                if not writeDLSS5NeuralRenderingPreference(True):
+                    logger.error('DLSS5 transition guard v10 candidate: blocked entering DLSS because the NR ON preference could not be saved')
+                    return False
+                # Override a previous OFF even if this burst already captured
+                # it on exit. A subsequent stable-DLSS F6 choice is still free.
+                transitionState['preferenceCaptured'] = True
+            @LOCAL:graphics_commit@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            targetUpscalingTechnique = @LOCAL:target_getter@
+            hasUpscalingChange = @LOCAL:upscaling_condition@
+            if hasUpscalingChange:
+                transitionState['needsRearm'] = True
+                @LOCAL:upscaling_call@
+                if not waitForGraphicsDeviceReady(targetUpscalingTechnique):
+                    return False
+                @LOCAL:panel_refresh@
+
+            @LOCAL:graphics_event@
+
+            hasResourceChange = any(key in changes for key in resourceSettings)
+            if hasUpscalingChange or (hasResourceChange and transitionState['needsRearm']):
+                if not waitForGraphicsDeviceReady(targetUpscalingTechnique):
+                    return False
+            @LOCAL:crash_key@
+            return True
+
+        @LOCAL:window_guard@
+
+        if getattr(self, '_dlss5GraphicsApplyInProgress', False):
+            self._dlss5GraphicsApplyPending = True
+            logger.info('DLSS5 transition guard v5: coalescing a re-entrant graphics apply')
+            return
+        self._dlss5GraphicsApplyInProgress = True
+        gfxsettings._dlss5GraphicsApplyActive = getattr(gfxsettings, '_dlss5GraphicsApplyActive', 0) + 1
+        try:
+            startupPolls = 0
+            while getattr(gfxsettings, '_dlss5StartupBusy', False):
+                if startupPolls >= 200:
+                    logger.error('DLSS5 transition guard v11 candidate: blocked graphics apply because startup synchronization is still busy; retry the graphics change')
+                    return
+                blue.synchro.SleepWallclock(50)
+                startupPolls += 1
+            while True:
+                self._dlss5GraphicsApplyPending = False
+                if not applyGraphicsSettingsPass():
+                    return
+                if getattr(self, '_dlss5GraphicsApplyPending', False):
+                    logger.info('DLSS5 transition guard v10 candidate: draining coalesced graphics settings before NR re-arm')
+                    continue
+                if transitionState['needsRearm'] and @LOCAL:target_getter@ == gfxsettings.GFX_UPSCALING_TECHNIQUE_DLSS:
+                    preferredNeuralRenderingState = readDLSS5NeuralRenderingPreference()
+                    if preferredNeuralRenderingState is None:
+                        preferredNeuralRenderingState = 'ON'
+                        if not writeDLSS5NeuralRenderingPreference(True):
+                            logger.warning('DLSS5 transition guard v10 candidate: using default NR ON preference for this transition only')
+                    if preferredNeuralRenderingState == 'ON':
+                        logger.info('DLSS5 transition guard v10 candidate: waiting 3000 ms after the final graphics pass before NR re-arm')
+                        blue.synchro.SleepWallclock(3000)
+                        # A settings callback may have run during this yield.
+                        # Apply it while NR remains OFF, not after re-arming.
+                        if getattr(self, '_dlss5GraphicsApplyPending', False):
+                            continue
+                        if not ensureDLSS5NeuralRenderingState(True):
+                            logger.error('DLSS5 transition guard v10 candidate: user-preferred NR ON could not be confirmed')
+                            return
+                        transitionState['needsRearm'] = False
+                        transitionState['preferenceCaptured'] = False
+                        blue.synchro.SleepWallclock(500)
+                    else:
+                        if not ensureDLSS5NeuralRenderingState(False):
+                            logger.error('DLSS5 transition guard v10 candidate: user-preferred NR OFF could not be confirmed')
+                            return
+                        transitionState['needsRearm'] = False
+                        transitionState['preferenceCaptured'] = False
+                # A callback may also arrive during the F6 acknowledgement or
+                # its settle delay. The next pass must disarm again if needed.
+                if not getattr(self, '_dlss5GraphicsApplyPending', False):
+                    break
+        finally:
+            gfxsettings._dlss5GraphicsApplyActive -= 1
+            self._dlss5GraphicsApplyInProgress = False
+            self._dlss5GraphicsApplyPending = False
+        return

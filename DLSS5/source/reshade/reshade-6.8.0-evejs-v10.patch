@@ -1,0 +1,511 @@
+diff --git a/res/exports.def b/res/exports.def
+index bfd80ae7e450d3fb442c1fa5baba0c4200817d62..488a54d5f7038558dcb666b753caf9b2eb5df973 100644
+--- a/res/exports.def
++++ b/res/exports.def
+@@ -1,4 +1,7 @@
+ EXPORTS
++	; EveJS DLSS5 process-local input bridge
++	EveJSDLSS5InjectF6State PRIVATE
++
+ 	; d2d1.dll (Uses ordinals in d2d1.lib for all exports)
+ 	D2D1CreateDevice @7 PRIVATE
+ 	D2D1CreateFactory @1 PRIVATE
+diff --git a/source/d3d12/d3d12_device.cpp b/source/d3d12/d3d12_device.cpp
+index fab80ad3279414fcd31e7853770796c55c89d0d5..c4f6bd7c4b9e33373bf8c8087e2672608d87a906 100644
+--- a/source/d3d12/d3d12_device.cpp
++++ b/source/d3d12/d3d12_device.cpp
+@@ -43,7 +43,17 @@ D3D12Device::~D3D12Device()
+ {
+ #if RESHADE_ADDON
+ 	reshade::invoke_addon_event<reshade::addon_event::destroy_device>(this);
++#endif
+ 
++	// Child objects may outlive the proxy when the application recreates its D3D12
++	// renderer. Their destruction callbacks capture this object, so stop them before
++	// tearing down the device implementation and its resource registries.
++	{
++		const std::unique_lock<std::shared_mutex> lock(_destruction_callbacks->mutex);
++		_destruction_callbacks->alive = false;
++	}
++
++#if RESHADE_ADDON
+ 	reshade::unload_addons();
+ #endif
+ 
+@@ -401,9 +411,9 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateDescriptorHeap(const D3D12_DESCRIPT
+ 			{
+ 				register_descriptor_heap(descriptor_heap_proxy);
+ 
+-				register_destruction_callback_d3dx(descriptor_heap_proxy, [this, descriptor_heap_proxy]() {
++				register_destruction_callback_d3dx(descriptor_heap_proxy, guard_destruction_callback([this, descriptor_heap_proxy]() {
+ 					unregister_descriptor_heap(descriptor_heap_proxy);
+-				});
++				}));
+ 
+ #if RESHADE_VERBOSE_LOG
+ 				reshade::log::message(reshade::log::level::debug, "Returning ID3D12DescriptorHeap object %p (%p).", descriptor_heap_proxy, descriptor_heap_proxy->_orig);
+@@ -1089,9 +1099,9 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateQueryHeap(const D3D12_QUERY_HEAP_DE
+ 
+ 			if (reshade::has_addon_event<reshade::addon_event::destroy_query_heap>())
+ 			{
+-				register_destruction_callback_d3dx(query_heap, [this, query_heap]() {
++				register_destruction_callback_d3dx(query_heap, guard_destruction_callback([this, query_heap]() {
+ 					reshade::invoke_addon_event<reshade::addon_event::destroy_query_heap>(this, to_handle(query_heap));
+-				});
++				}));
+ 			}
+ 		}
+ #if RESHADE_VERBOSE_LOG
+@@ -2263,9 +2273,9 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateQueryHeap1(const D3D12_QUERY_HEAP_D
+ 
+ 			if (reshade::has_addon_event<reshade::addon_event::destroy_query_heap>())
+ 			{
+-				register_destruction_callback_d3dx(query_heap, [this, query_heap]() {
++				register_destruction_callback_d3dx(query_heap, guard_destruction_callback([this, query_heap]() {
+ 					reshade::invoke_addon_event<reshade::addon_event::destroy_query_heap>(this, to_handle(query_heap));
+-				});
++				}));
+ 			}
+ 		}
+ #if RESHADE_VERBOSE_LOG
+@@ -2313,10 +2323,10 @@ void D3D12Device::invoke_init_resource_event(const reshade::api::resource_desc &
+ 	register_resource(resource, initial_state == reshade::api::resource_usage::acceleration_structure);
+ 	reshade::invoke_addon_event<reshade::addon_event::init_resource>(this, desc, nullptr, initial_state, to_handle(resource));
+ 
+-	register_destruction_callback_d3dx(resource, [this, resource]() {
++	register_destruction_callback_d3dx(resource, guard_destruction_callback([this, resource]() {
+ 		reshade::invoke_addon_event<reshade::addon_event::destroy_resource>(this, to_handle(resource));
+ 		unregister_resource(resource);
+-	});
++	}));
+ 
+ 	if (initial_state == reshade::api::resource_usage::acceleration_structure)
+ 	{
+@@ -2765,9 +2775,9 @@ bool D3D12Device::invoke_create_and_init_pipeline_event(const D3D12_STATE_OBJECT
+ 
+ 		if (reshade::has_addon_event<reshade::addon_event::destroy_pipeline>())
+ 		{
+-			register_destruction_callback_d3dx(d3d_pipeline, [this, d3d_pipeline]() {
++			register_destruction_callback_d3dx(d3d_pipeline, guard_destruction_callback([this, d3d_pipeline]() {
+ 				reshade::invoke_addon_event<reshade::addon_event::destroy_pipeline>(this, to_handle(d3d_pipeline));
+-			});
++			}));
+ 		}
+ 	}
+ 
+@@ -3000,9 +3010,9 @@ bool D3D12Device::invoke_create_and_init_pipeline_event(const D3D12_PIPELINE_STA
+ 
+ 		if (reshade::has_addon_event<reshade::addon_event::destroy_pipeline>())
+ 		{
+-			register_destruction_callback_d3dx(d3d_pipeline, [this, d3d_pipeline]() {
++			register_destruction_callback_d3dx(d3d_pipeline, guard_destruction_callback([this, d3d_pipeline]() {
+ 				reshade::invoke_addon_event<reshade::addon_event::destroy_pipeline>(this, to_handle(d3d_pipeline));
+-			});
++			}));
+ 		}
+ 	}
+ 
+@@ -3323,9 +3333,9 @@ bool D3D12Device::invoke_create_and_init_pipeline_layout_event(UINT node_mask, c
+ 
+ 		if (reshade::has_addon_event<reshade::addon_event::destroy_pipeline_layout>())
+ 		{
+-			register_destruction_callback_d3dx(root_signature, [this, root_signature]() {
++			register_destruction_callback_d3dx(root_signature, guard_destruction_callback([this, root_signature]() {
+ 				reshade::invoke_addon_event<reshade::addon_event::destroy_pipeline_layout>(this, to_handle(root_signature));
+-			});
++			}));
+ 		}
+ 	}
+ 
+diff --git a/source/d3d12/d3d12_device.hpp b/source/d3d12/d3d12_device.hpp
+index 065e55fda47a00a687d83ce2c4c9eab13bd97454..56fea74388ad7965f597211bd4e995342037037e 100644
+--- a/source/d3d12/d3d12_device.hpp
++++ b/source/d3d12/d3d12_device.hpp
+@@ -6,6 +6,10 @@
+ #pragma once
+ 
+ #include "d3d12_impl_device.hpp"
++#include <memory>
++#include <mutex>
++#include <shared_mutex>
++#include <utility>
+ 
+ class D3D12DeviceDownlevel;
+ 
+@@ -166,5 +170,23 @@ public:
+ 	unsigned short _interface_version = 0;
+ 
+ private:
++	struct destruction_callback_state
++	{
++		std::shared_mutex mutex;
++		bool alive = true;
++	};
++
++	template <typename Callback>
++	auto guard_destruction_callback(Callback &&callback)
++	{
++		auto state = _destruction_callbacks;
++		return [state = std::move(state), callback = std::forward<Callback>(callback)]() {
++			const std::shared_lock<std::shared_mutex> lock(state->mutex);
++			if (state->alive)
++				callback();
++		};
++	}
++
++	std::shared_ptr<destruction_callback_state> _destruction_callbacks = std::make_shared<destruction_callback_state>();
+ 	D3D12DeviceDownlevel *_downlevel = nullptr;
+ };
+diff --git a/source/dll_main_test_app.cpp b/source/dll_main_test_app.cpp
+index 68f909e8e0e2081b552d028daea083c9ece8da31..f2edd0f531ac8c93127c389745017366bdabaa82 100644
+--- a/source/dll_main_test_app.cpp
++++ b/source/dll_main_test_app.cpp
+@@ -11,6 +11,7 @@
+ #include "addon_manager.hpp"
+ #include "com_ptr.hpp"
+ #include "ini_file.hpp"
++#include "evejs_dlss5_f6_policy.hpp"
+ #include <d3d9.h>
+ #include <d3d11.h>
+ #include <d3d12.h>
+@@ -62,6 +63,139 @@ static LONG APIENTRY HookD3DKMTQueryAdapterInfo(const void *pData)
+ 	return reshade::hooks::call(HookD3DKMTQueryAdapterInfo)(pData);
+ }
+ 
++static bool evejs_dlss5_f6_policy_self_test()
++{
++	// These deterministic fixtures call the exact helper used by the native hook.
++	// They do not query/change focus, create input, or call any physical key API.
++	struct fixture
++	{
++		reshade::evejs::dlss5_f6_policy policy;
++		std::uint32_t pid = 10;
++		reshade::evejs::foreground_window before = { 100, 10 }, after = { 100, 10 };
++		std::int16_t physical = 0;
++		bool injected = false, blocked = false;
++		unsigned int checks = 0, foreground_calls = 0, blocking_calls = 0, physical_calls = 0;
++
++		bool check(const char *name, std::int16_t expected, int key = VK_F6, bool handled = true)
++		{
++			foreground_calls = blocking_calls = physical_calls = 0;
++			std::int16_t result = 1234;
++			const bool actual_handled = policy.filter(key, injected, pid,
++				[&]() { return foreground_calls++ == 0 ? before : after; },
++				[&]() { ++blocking_calls; return blocked; },
++				[&](int) { ++physical_calls; return physical; }, result);
++			if (actual_handled != handled || result != expected)
++			{
++				reshade::log::message(reshade::log::level::error,
++					"EveJS V10 F6 policy FAIL: %s (handled=%d result=%d expected=%d).",
++					name, actual_handled, result, expected);
++				return false;
++			}
++			++checks;
++			return true;
++		}
++	};
++
++	constexpr auto down = reshade::evejs::dlss5_f6_policy::down;
++	fixture a, b;
++	b.pid = 20;
++	b.before = b.after = { 200, 20 };
++	a.physical = down;
++	if (!a.check("initial foreground DOWN suppressed", 0)) return false;
++	a.physical = 0;
++	if (!a.check("foreground UP arms", 0)) return false;
++	a.physical = down;
++	if (!a.check("foreground DOWN", down) || !a.check("held DOWN remains down", down)) return false;
++	a.physical = 0;
++	if (!a.check("normal release", 0)) return false;
++	a.physical = down;
++	if (!a.check("second foreground press", down)) return false;
++
++	a.before = a.after = { 200, 20 };
++	if (!a.check("held focus handoff disarms old client", 0) || a.physical_calls != 0) return false;
++	b.physical = down;
++	if (!b.check("new foreground client rejects already-held F6", 0)) return false;
++	b.physical = 0;
++	if (!b.check("new client release arms", 0)) return false;
++	b.physical = down;
++	if (!b.check("new client fresh press", down)) return false;
++	a.before = a.after = { 100, 10 };
++	if (!a.check("returning old client rejects held F6", 0)) return false;
++	a.physical = 0;
++	if (!a.check("old client release rearms", 0)) return false;
++	a.physical = down;
++	if (!a.check("old client fresh press", down)) return false;
++
++	a.before = a.after = {};
++	if (!a.check("null foreground disarms", 0) || a.physical_calls != 0) return false;
++	a.before = a.after = { 100, 10 };
++	if (!a.check("held after null foreground suppressed", 0)) return false;
++	a.before = a.after = { 100, 0 };
++	if (!a.check("failed PID lookup suppresses", 0) || a.physical_calls != 0) return false;
++	a.before = a.after = { 100, 20 };
++	if (!a.check("foreign PID suppresses", 0) || a.physical_calls != 0) return false;
++	a.before = a.after = { 100, 10 };
++	a.physical = 0;
++	if (!a.check("UP before blocking", 0)) return false;
++	a.blocked = true;
++	a.physical = down;
++	if (!a.check("keyboard blocking disarms", 0) || a.physical_calls != 0) return false;
++	a.blocked = false;
++	if (!a.check("held after blocking suppressed", 0)) return false;
++	a.physical = 0;
++	if (!a.check("release after blocking arms", 0)) return false;
++	a.physical = down;
++	if (!a.check("press after blocking", down)) return false;
++
++	a.before = a.after = {};
++	a.blocked = a.injected = true;
++	if (!a.check("synthetic overrides null foreground and blocking", down) ||
++		a.foreground_calls != 0 || a.blocking_calls != 0 || a.physical_calls != 0) return false;
++	if (!a.check("synthetic held", down)) return false;
++	if (!b.check("other process policy unaffected by synthetic override", down)) return false;
++	a.before = a.after = { 200, 20 };
++	if (!a.check("synthetic overrides foreign foreground", down) ||
++		a.foreground_calls != 0 || a.blocking_calls != 0 || a.physical_calls != 0) return false;
++	a.before = a.after = { 100, 10 };
++	a.blocked = a.injected = false;
++	if (!a.check("synthetic released while physical held suppressed", 0)) return false;
++	a.physical = 0;
++	if (!a.check("release after synthetic rearms", 0)) return false;
++	a.physical = down;
++	if (!a.check("fresh physical press after synthetic", down)) return false;
++
++	a.after = { 200, 20 };
++	if (!a.check("focus changes between physical samples", 0)) return false;
++	a.after = a.before;
++	if (!a.check("held after sampled focus change suppressed", 0)) return false;
++	a.physical = 0;
++	if (!a.check("release before null second snapshot", 0)) return false;
++	a.after = {};
++	a.physical = down;
++	if (!a.check("null second snapshot", 0)) return false;
++	a.after = { 101, 10 };
++	if (!a.check("same-PID different window during sample suppressed", 0)) return false;
++	a.after = a.before;
++	a.physical = 1;
++	if (!a.check("global low bit ignored on release", 0)) return false;
++	a.physical = static_cast<std::int16_t>(0x8001u);
++	if (!a.check("only high bit returned on press", down)) return false;
++
++	// Non-F6 calls neither change this state nor invoke any supplied provider.
++	a.injected = a.blocked = true;
++	for (int key = -1; key <= 256; ++key)
++	{
++		if (key == VK_F6) continue;
++		if (!a.check("non-F6 passthrough", 1234, key, false) ||
++			a.foreground_calls != 0 || a.blocking_calls != 0 || a.physical_calls != 0) return false;
++	}
++	a.injected = a.blocked = false;
++	if (!a.check("non-F6 calls did not change armed state", down)) return false;
++	reshade::log::message(reshade::log::level::info,
++		"EveJS V10 F6 production policy PASS: %u deterministic checks; no physical input or focus changes.", a.checks + b.checks);
++	return true;
++}
++
+ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow)
+ {
+ 	g_module_handle = hInstance;
+@@ -123,6 +257,38 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
+ 	if (window_handle == nullptr)
+ 		return 0;
+ 
++	if (strstr(lpCmdLine, "-evejs-dlss5-input-self-test"))
++	{
++		if (!evejs_dlss5_f6_policy_self_test())
++			return 30;
++		wchar_t module_path[32768] = {};
++		const DWORD module_path_length = GetModuleFileNameW(nullptr, module_path, static_cast<DWORD>(std::size(module_path)));
++		if (module_path_length == 0 || module_path_length >= std::size(module_path))
++			return 10;
++		const HMODULE module = GetModuleHandleW(module_path);
++		using inject_f6_state = BOOL (WINAPI *)(HWND, BOOL);
++		const auto inject = module != nullptr ? reinterpret_cast<inject_f6_state>(GetProcAddress(module, "EveJSDLSS5InjectF6State")) : nullptr;
++		if (inject == nullptr)
++			return 11;
++		if (inject(nullptr, TRUE) != FALSE)
++			return 12;
++		if ((GetAsyncKeyState(VK_F6) & 0x8000) != 0)
++			return 13;
++		if (inject(window_handle, TRUE) == FALSE)
++			return 14;
++		if ((GetAsyncKeyState(VK_F6) & 0x8000) == 0)
++			return 15;
++		if ((GetAsyncKeyState(VK_F6) & 0x8000) == 0)
++			return 16;
++		if (inject(window_handle, FALSE) == FALSE)
++			return 17;
++		if ((GetAsyncKeyState(VK_F6) & 0x8000) != 0)
++			return 18;
++		DestroyWindow(window_handle);
++		UnregisterClass(wc.lpszClassName, hInstance);
++		return 0;
++	}
++
+ 	ShowWindow(window_handle, nCmdShow);
+ 
+ 	// Avoid resize caused by 'ShowWindow' call
+diff --git a/source/evejs_dlss5_f6_policy.hpp b/source/evejs_dlss5_f6_policy.hpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..340ed668818cfd2769e8be71bb0ce29f1c80f9b7
+--- /dev/null
++++ b/source/evejs_dlss5_f6_policy.hpp
+@@ -0,0 +1,75 @@
++/*
++ * Copyright (C) 2026 EveJS DLSS5 contributors
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++#pragma once
++
++#include <cstdint>
++
++namespace reshade::evejs
++{
++
++struct foreground_window
++{
++	std::uintptr_t handle = 0;
++	std::uint32_t process_id = 0;
++};
++
++// The caller serializes this process-local state. No input is generated here.
++// Focus is sampled: an entire away/back transition between polls is invisible.
++class dlss5_f6_policy
++{
++public:
++	static constexpr int key = 0x75; // VK_F6
++	static constexpr std::int16_t down = static_cast<std::int16_t>(0x8000u);
++
++	template <typename Foreground, typename Blocking, typename Physical>
++	bool filter(int virtual_key, bool injected, std::uint32_t process_id,
++		Foreground &&foreground, Blocking &&blocking, Physical &&physical,
++		std::int16_t &result)
++	{
++		if (virtual_key != key)
++			return false; // Do not read or modify anything for non-F6 keys.
++
++		result = 0;
++		if (injected)
++		{
++			// Automatic transitions remain usable in an unfocused/blocked client.
++			// A simultaneously held physical key must not replay after release.
++			_physical_armed = false;
++			result = down;
++			return true;
++		}
++
++		const foreground_window before = foreground();
++		if (before.handle == 0 || before.process_id == 0 ||
++			before.process_id != process_id || blocking())
++		{
++			_physical_armed = false;
++			return true;
++		}
++
++		const std::int16_t state = physical(virtual_key);
++		const foreground_window after = foreground();
++		if (after.handle != before.handle || after.process_id != process_id)
++		{
++			_physical_armed = false;
++			return true;
++		}
++
++		// Ignore the global, unreliable "pressed since last call" low bit.
++		if ((state & 0x8000) == 0)
++			_physical_armed = true;
++		else if (_physical_armed)
++			result = down;
++
++		return true;
++	}
++
++private:
++	// Initial DOWN and a held key after focus loss require a foreground UP.
++	bool _physical_armed = false;
++};
++
++}
+diff --git a/source/input_windows.cpp b/source/input_windows.cpp
+index d022aeb44a8aabc88c7b55a99303117eebbfcc63..be2f8149d57c2fa64b7ce5ab179c858fef88f470 100644
+--- a/source/input_windows.cpp
++++ b/source/input_windows.cpp
+@@ -6,7 +6,9 @@
+ #include "input.hpp"
+ #include "dll_log.hpp"
+ #include "hook_manager.hpp"
++#include "evejs_dlss5_f6_policy.hpp"
+ #include <atomic>
++#include <mutex>
+ #include <shared_mutex>
+ #include <unordered_map>
+ #include <cstring> // std::memset
+@@ -24,6 +26,10 @@ static POINT s_last_cursor_position = {};
+ static std::atomic<bool> s_block_mouse = false;
+ static std::atomic<bool> s_block_keyboard = false;
+ static std::atomic<bool> s_block_cursor_warping = false;
++static std::atomic<bool> s_evejs_dlss5_f6_override = false;
++static std::mutex s_evejs_dlss5_f6_mutex;
++static reshade::evejs::dlss5_f6_policy s_evejs_dlss5_f6_policy;
++static_assert(reshade::evejs::dlss5_f6_policy::key == VK_F6);
+ 
+ extern "C" BOOL WINAPI HookClipCursor(const RECT *lpRect);
+ extern "C" auto WINAPI HookGetKeyState(int vKey) -> SHORT;
+@@ -98,6 +104,27 @@ std::shared_ptr<reshade::input> reshade::input::register_window(window_handle wi
+ 	}
+ }
+ 
++extern "C" BOOL WINAPI EveJSDLSS5InjectF6State(HWND window, BOOL down)
++{
++	DWORD process_id = 0;
++	if (window == nullptr || GetWindowThreadProcessId(window, &process_id) == 0 || process_id != GetCurrentProcessId())
++	{
++		reshade::log::message(
++			reshade::log::level::warning,
++			"EveJS DLSS5 control: rejected process-local async F6 %s for window %p in PID %lu.",
++			down != FALSE ? "DOWN" : "UP", window, GetCurrentProcessId());
++		return FALSE;
++	}
++
++	s_evejs_dlss5_f6_override.store(down != FALSE, std::memory_order_release);
++
++	reshade::log::message(
++		reshade::log::level::info,
++		"EveJS DLSS5 control: %s process-local async F6 override for window %p in PID %lu.",
++		down != FALSE ? "armed" : "released", window, GetCurrentProcessId());
++	return TRUE;
++}
++
+ bool reshade::input::handle_window_message(const void *message_data)
+ {
+ 	assert(message_data != nullptr);
+@@ -683,6 +710,27 @@ extern "C" auto WINAPI HookGetKeyState(int vKey) -> SHORT
+ }
+ extern "C" auto WINAPI HookGetAsyncKeyState(int vKey) -> SHORT
+ {
++	if (vKey == VK_F6)
++	{
++		// RenoDX polls this API directly. Synthetic transitions are process-local;
++		// physical F6 is foreground-only and rearms only after a foreground UP.
++		const std::lock_guard<std::mutex> lock(s_evejs_dlss5_f6_mutex);
++		static const auto trampoline = reshade::hooks::call(HookGetAsyncKeyState);
++		std::int16_t result = 0;
++		s_evejs_dlss5_f6_policy.filter(vKey,
++			s_evejs_dlss5_f6_override.load(std::memory_order_acquire), GetCurrentProcessId(),
++			[]() -> reshade::evejs::foreground_window {
++				const HWND window = GetForegroundWindow();
++				DWORD process_id = 0;
++				if (window == nullptr || GetWindowThreadProcessId(window, &process_id) == 0)
++					return {};
++				return { reinterpret_cast<std::uintptr_t>(window), process_id };
++			},
++			[]() { return reshade::input::is_blocking_any_keyboard_input(); },
++			trampoline, result);
++		return result;
++	}
++
+ 	// Valid keyboard keys are between 8 and 255
+ 	if ((vKey & 0xF8) != 0)
+ 	{

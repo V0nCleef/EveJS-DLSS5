@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 5,
+  "integrationVersion": "0.5.5",
+  "clientBuild": 3396210,
+  "artifacts": [
+    {
+      "id": "renodx-dlss5-4.70",
+      "name": "RenoDX DLSS5 4.70",
+      "url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-4.70/renodx-dlss5_4.70.zip",
+      "fileName": "renodx-dlss5_4.70.zip",
+      "bytes": 632174,
+      "sha256": "D6E356D01B429AF6288F488A4926C44F1D779A7D4586EE8C79D04D3A09A536E6",
+      "entries": [
+        "renodx-dlss5.addon64"
+      ],
+      "licenseId": "renodx-mit-and-upstream-asset-terms"
+    },
+    {
+      "id": "nvidia-dlssnr-310.8.0",
+      "name": "NVIDIA DLSS Neural Rendering 310.8.0",
+      "url": "https://github.com/RankFTW/rhi-repo/releases/download/dlssnr-310.8.0/nvngx_dlssnr_310.8.0.zip",
+      "fileName": "nvngx_dlssnr_310.8.0.zip",
+      "bytes": 109425288,
+      "sha256": "388C0A7912E15EC911B9C9E11A692142B11FE387DDF2B637D8C358138FFFB3AC",
+      "entries": [
+        "nvngx_dlssnr.dll"
+      ],
+      "licenseId": "nvidia-rtx-sdk"
+    },
+    {
+      "id": "nvidia-streamline-2.13.0.0",
+      "name": "NVIDIA Streamline 2.13.0.0",
+      "url": "https://github.com/RankFTW/rhi-repo/releases/download/streamline-2.13.0.0/streamline_2.13.0.0.zip",
+      "fileName": "streamline_2.13.0.0.zip",
+      "bytes": 2562386,
+      "sha256": "7F38B5B2B7CC83AE859CCB3266160B8E5E517F379F81987FE3C758AE5C9E8C02",
+      "entries": [
+        "sl.common.dll",
+        "sl.deepdvc.dll",
+        "sl.directsr.dll",
+        "sl.dlss.dll",
+        "sl.dlss_g.dll",
+        "sl.dlss_nr.dll",
+        "sl.interposer.dll",
+        "sl.nis.dll",
+        "sl.nvperf.dll",
+        "sl.pcl.dll",
+        "sl.reflex.dll"
+      ],
+      "licenseId": "streamline-mit-and-nvidia-rtx-sdk"
+    }
+  ],
+  "generator": {
+    "id": "evejs-code-ccp-v12-local-source-v1",
+    "archiveEntry": "eve/client/script/ui/shared/systemMenu/systemmenu.pyj",
+    "embeddedFilename": "eve/client/script/ui/shared/systemMenu/systemmenu.py",
+    "originalPycBytes": 135368,
+    "originalPycSha256": "15DFB23A19F1972D4B2802A86116E9FB53B3850672679461456F1AC00FE33625",
+    "patchedPycBytes": 127041,
+    "patchedPycSha256": "BCE3BE9AB397953245C8FA30002AB4AD0468FFE0EBD0F998452D0314D2C8B188",
+    "pythonRuntime": {
+      "path": "bin64\\python27.dll",
+      "bytes": 3567760,
+      "sha256": "BA5B8EBD0E0972867450341D67F4FA8C988B04EF235D19F65687064A36128C19",
+      "authenticode": {
+        "status": "Valid",
+        "publisher": "CCP ehf.",
+        "subject": "CN=CCP ehf., OU=CCP, O=CCP ehf., L=Reykjav\u00edk, C=IS, SERIALNUMBER=4506973469, OID.2.5.4.15=Private Organization, OID.1.3.6.1.4.1.311.60.2.1.3=IS",
+        "thumbprint": "BE688C28E20108AB16E53BA40990765EE8536F2B"
+      }
+    },
+    "tools": [
+      {
+        "id": "runner",
+        "path": "client-patches\\tools\\run_py27.exe",
+        "bytes": 153600,
+        "sha256": "8BC38B15DA14F2C5A6720534271DE87A7A35E48704C545E3452A6D631D1CDBC4"
+      },
+      {
+        "id": "runner-source",
+        "path": "client-patches\\tools\\run_py27.cpp",
+        "bytes": 3266,
+        "sha256": "67224EB5FC8EA71B53CB7E05B4C9D43512796B51C342402640BB67E83F31927B"
+      },
+      {
+        "id": "builder",
+        "path": "client-patches\\tools\\build_code_ccp.py",
+        "bytes": 12191,
+        "sha256": "E80FF90D14146EBA95086E65AF521116AE0DDCB850A133A3CE0F1B5C2B4261DB"
+      },
+      {
+        "id": "graphics-template",
+        "path": "client-patches\\templates\\systemmenu_apply_graphics.py.in",
+        "bytes": 17954,
+        "sha256": "240B379994A42374C41F7875A8783D4FA6237194833C37F54C3C9C1F02B70F38"
+      },
+      {
+        "id": "startup-template",
+        "path": "client-patches\\templates\\device_create.py.in",
+        "bytes": 11703,
+        "sha256": "4A00A98FC65997E7996F665BA5DBEC85923DDA16CBD84C458F26F0663FC709D7"
+      },
+      {
+        "id": "local-source",
+        "path": "client-patches\\tools\\local_source.py",
+        "bytes": 21812,
+        "sha256": "BD070ED7047613C14FD8C961A7B2447921AB9F2ED0C769B98D555ECDBD579A99"
+      },
+      {
+        "id": "reconstruct",
+        "path": "client-patches\\tools\\reconstruct.py",
+        "bytes": 6440,
+        "sha256": "585E32DD92A636F90C76CCD772767D0ECEAB34F2DBB6812D7B8D68A127223EFE"
+      }
+    ],
+    "intermediateArchive": {
+      "bytes": 30760389,
+      "sha256": "41A380AEF24D7304F595C7F4DBF93B5BD45D2F42A343E6DACD1C0096526A1FB1"
+    },
+    "startupPatch": {
+      "archiveEntry": "carbonui/services/device.pyj",
+      "embeddedFilename": "carbonui/services/device.py",
+      "className": "DeviceMgr",
+      "methodName": "CreateDevice",
+      "originalPycBytes": 27911,
+      "originalPycSha256": "924F5050A7476845B8DBBB4CC96032A14C7773FF18373D707B605A75821A6F61",
+      "patchedPycBytes": 30723,
+      "patchedPycSha256": "C0F26D50BFB11AF910F67E3CC365EAFC82A275FAEF060926ED2FD1F7F859E409"
+    }
+  },
+  "files": [
+    {
+      "id": "nvidia-dlssnr",
+      "source": "E16BCF15E16E13F527491CDF7845B2FE6521A738D8F7C9C721866A8496E1FC8E\\nvngx_dlssnr.dll",
+      "destination": "bin64\\nvngx_dlssnr.dll",
+      "component": "neuralRuntime",
+      "sourceKind": "archive",
+      "artifactId": "nvidia-dlssnr-310.8.0",
+      "archiveEntry": "nvngx_dlssnr.dll",
+      "bytes": 165840496,
+      "sha256": "E16BCF15E16E13F527491CDF7845B2FE6521A738D8F7C9C721866A8496E1FC8E",
+      "version": "310.8.0.0",
+      "licenseId": "nvidia-rtx-sdk",
+      "authenticode": {
+        "status": "Valid",
+        "publisher": "NVIDIA Corporation",
+        "subject": "CN=NVIDIA Corporation, OU=1005bk6, O=NVIDIA Corporation, L=Santa Clara, S=California, C=US",
+        "thumbprint": "7B7B0B6697AFB438CF6F65A155F00E86676FB186"
+      }
+    },
+    {
+      "id": "nvidia-streamline-dlss-nr",
+      "source": "9F6672E5E0170DC118A3188D21BDA187E1FC1AA3502895B21AB846D23165C11D\\sl.dlss_nr.dll",
+      "destination": "bin64\\sl.dlss_nr.dll",
+      "component": "neuralRuntime",
+      "sourceKind": "archive",
+      "artifactId": "nvidia-streamline-2.13.0.0",
+      "archiveEntry": "sl.dlss_nr.dll",
+      "bytes": 401024,
+      "sha256": "9F6672E5E0170DC118A3188D21BDA187E1FC1AA3502895B21AB846D23165C11D",
+      "version": "2.13.0.0 / v2.13.0-beta10 / 11ffc00ec",
+      "licenseId": "streamline-mit-and-nvidia-rtx-sdk",
+      "authenticode": {
+        "status": "Valid",
+        "publisher": "NVIDIA Corporation",
+        "subject": "CN=NVIDIA Corporation, OU=2008B9F, O=NVIDIA Corporation, L=Santa Clara, S=California, C=US",
+        "thumbprint": "B66776FC8E70C58ED98199E8391264C827AAC534"
+      }
+    },
+    {
+      "id": "renodx-dlss5",
+      "source": "D5ADF82EB44B065F4C590AC91FE824BAB07AFEA0EB9F994BDE936710C8593952\\renodx-dlss5.addon64",
+      "destination": "bin64\\renodx-dlss5.addon64",
+      "component": "renodx",
+      "sourceKind": "archive",
+      "artifactId": "renodx-dlss5-4.70",
+      "archiveEntry": "renodx-dlss5.addon64",
+      "bytes": 1732608,
+      "sha256": "D5ADF82EB44B065F4C590AC91FE824BAB07AFEA0EB9F994BDE936710C8593952",
+      "version": "4.70 / 0.2026.0828.0517",
+      "licenseId": "renodx-mit-and-upstream-asset-terms"
+    },
+    {
+      "id": "reshade-evejs",
+      "source": "26EBDD0C2AE67EED8D305BC8B7A3A67B606F74D19979EFDFE6E584ACB27B78BF\\ReShade64.dll",
+      "destination": "bin64\\dxgi.dll",
+      "component": "reshade",
+      "sourceKind": "bundled",
+      "packagePath": "payload\\reshade\\ReShade64.dll",
+      "bytes": 5594112,
+      "sha256": "26EBDD0C2AE67EED8D305BC8B7A3A67B606F74D19979EFDFE6E584ACB27B78BF",
+      "version": "6.8.0.10 / EveJS V11 process-local NR state and F6 acknowledgement",
+      "licenseId": "reshade-bsd-3-clause"
+    },
+    {
+      "id": "evejs-transition-guard",
+      "source": "BC8DD57471B376D3CC37A1908CEE64174E98EDB6D3D94B9F04437BDCE33686CC\\code.ccp",
+      "destination": "code.ccp",
+      "component": "clientGuard",
+      "sourceKind": "generated",
+      "generatorId": "evejs-code-ccp-v12-local-source-v1",
+      "bytes": 30763542,
+      "sha256": "BC8DD57471B376D3CC37A1908CEE64174E98EDB6D3D94B9F04437BDCE33686CC",
+      "version": "EveJS client 3396210 / DLSS5 process-local startup and transition guard V12 candidate",
+      "licenseId": "local-client-compatibility-patch",
+      "requiredOriginalBytes": 30757025,
+      "requiredOriginalSha256": "89696509EFDC1B081F7371B40CA3D459059DB0E43B5DB328FE373C0F2A9B1A86"
+    }
+  ]
+}
