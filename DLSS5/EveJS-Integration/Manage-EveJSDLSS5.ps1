@@ -1345,7 +1345,17 @@ function Test-ReShadeConfigForProfile {
             throw "Duplicate ReShade.ini key: [$($managed.section)] $($managed.key)"
         }
         if ($expectedPresent) {
-            if (-not $state.present -or -not ([string]$state.value).Equals($expectedValue, [StringComparison]::Ordinal)) {
+            $valueMatches = $state.present -and ([string]$state.value).Equals($expectedValue, [StringComparison]::Ordinal)
+            if ($enableRenoDx -and
+                ([string]$managed.section).Equals("RenoDX.DLSS5", [StringComparison]::OrdinalIgnoreCase) -and
+                ([string]$managed.key).Equals("NeuralUplift", [StringComparison]::OrdinalIgnoreCase)) {
+                # NeuralUplift is live per-user state. RenoDX and the F6 control
+                # legitimately persist either 0 or 1 after installation. Keep
+                # presence and domain validation without forcing the install
+                # default back over the user's runtime choice.
+                $valueMatches = $state.present -and ([string]$state.value -in @("0", "1"))
+            }
+            if (-not $valueMatches) {
                 throw "ReShade.ini mismatch: [$($managed.section)] $($managed.key)"
             }
         } elseif ($state.present) {
@@ -1970,11 +1980,11 @@ function Assert-NoInstalledLegacyRootLocalJournal {
     try {
         $legacy = [IO.File]::ReadAllText($legacyManifestPath, [Text.Encoding]::UTF8) | ConvertFrom-Json
     } catch {
-        throw "A legacy root-local DLSS5 journal exists but is invalid. Restore or repair it with its original package before installing 0.5.6: $legacyManifestPath"
+        throw "A legacy root-local DLSS5 journal exists but is invalid. Restore or repair it with its original package before installing this client-scoped package: $legacyManifestPath"
     }
     $legacyStatus = if ($legacy.PSObject.Properties.Name -contains "status") { [string]$legacy.status } else { "unknown" }
     if ($legacyStatus -notin @("restored", "rolledBack")) {
-        throw "Legacy root-local DLSS5 state is '$legacyStatus' at $legacyManifestPath. Version 0.5.6 will not copy or relabel that receipt. Restore it with the original package first."
+        throw "Legacy root-local DLSS5 state is '$legacyStatus' at $legacyManifestPath. This client-scoped package will not copy or relabel that receipt. Restore it with the original package first."
     }
 }
 
@@ -2208,7 +2218,7 @@ function Invoke-ClientScopedRootHandoff {
         Assert-WorkspaceLayout
         $installed = Read-ActiveManifest
         if (-not (Test-ManifestMatchesPayloadMetadata -Manifest $installed -PayloadManifest $payload)) {
-            throw "The old-root receipt does not match the exact 0.5.6 payload metadata."
+            throw "The old-root receipt does not match the exact client-scoped payload metadata."
         }
         Invoke-Verify -PayloadManifest $payload
         Assert-RestoreBackups -Manifest $installed

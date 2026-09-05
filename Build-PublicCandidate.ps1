@@ -193,7 +193,7 @@ foreach ($relative in $shippingFiles) {
 }
 
 $descriptor = [IO.File]::ReadAllText((Get-SafePackagePath 'evejs-launcher.client-mod.json'), $utf8) | ConvertFrom-Json
-if ([int]$descriptor.schemaVersion -ne 3 -or $descriptor.id -ne 'evejs-dlss5' -or $descriptor.version -ne '0.5.6' -or
+if ([int]$descriptor.schemaVersion -ne 3 -or $descriptor.id -ne 'evejs-dlss5' -or $descriptor.version -ne '0.5.7' -or
     $descriptor.manager.path -cne 'EveJS-Integration/Manage-EveJSDLSS5.ps1') {
     throw 'Unexpected development package identity or manager path.'
 }
@@ -241,7 +241,7 @@ $outputDirectory = Assert-PlainPath (Join-Path $PSScriptRoot 'candidate-output')
 if (Test-Path -LiteralPath $outputDirectory) {
     if (-not (Test-Path -LiteralPath $outputDirectory -PathType Container)) { throw 'candidate-output is not a directory.' }
 } else { New-Item -ItemType Directory -Path $outputDirectory | Out-Null }
-$candidateName = 'EveJS-DLSS5-0.5.6-RELEASE-CANDIDATE-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') + '-' + [Guid]::NewGuid().ToString('N') + '.zip'
+$candidateName = 'EveJS-DLSS5-0.5.7-RELEASE-CANDIDATE-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') + '-' + [Guid]::NewGuid().ToString('N') + '.zip'
 $candidatePath = Join-Path $outputDirectory $candidateName
 $partialPath = $candidatePath + '.partial'
 if ((Test-Path -LiteralPath $candidatePath) -or (Test-Path -LiteralPath $partialPath)) { throw 'Candidate already exists; nothing will be overwritten.' }

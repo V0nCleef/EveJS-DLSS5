@@ -2,7 +2,7 @@
 
 Add optional AI-enhanced visuals to your local EveJS game.
 
-**[Download DLSS5 0.5.6](https://github.com/V0nCleef/EveJS-DLSS5/releases/tag/v0.5.6)** · **[Get EveJS Launcher 1.0.51](https://github.com/V0nCleef/evejs-launcher/releases/tag/v1.0.51)** · **[Launcher GitHub](https://github.com/V0nCleef/evejs-launcher)**
+**[Download DLSS5 0.5.7](https://github.com/V0nCleef/EveJS-DLSS5/releases/tag/v0.5.7)** · **[Get EveJS Launcher 1.0.52](https://github.com/V0nCleef/evejs-launcher/releases/tag/v1.0.52)** · **[Launcher GitHub](https://github.com/V0nCleef/evejs-launcher)**
 
 This is a community mod for **local EveJS**, not for the official EVE Online service.
 
@@ -16,7 +16,7 @@ This is a community mod for **local EveJS**, not for the official EVE Online ser
 
 **Choose ONE installation method below.** Launcher users do not need to run the standalone installer.
 
-> If two EveJS folders use the same `tq` client, they share one graphics installation and one rollback record beside that client. Only one EveJS root owns the active receipt at a time. With every game client closed, 0.5.6 can safely hand that ownership to an immediate sibling EveJS folder.
+> If two EveJS folders use the same `tq` client, they share one graphics installation and one rollback record beside that client. Only one EveJS root owns the active receipt at a time. With every game client closed, 0.5.6 and later can safely hand that ownership to an immediate sibling EveJS folder.
 
 ## What are DLSS, NR and FG?
 
@@ -36,9 +36,9 @@ ReShade is the in-game menu used to show the add-on. RenoDX is the component tha
 
 ## Option A — Install with EveJS Launcher
 
-1. Download and open [EveJS Launcher 1.0.51](https://github.com/V0nCleef/evejs-launcher/releases/tag/v1.0.51).
+1. Download and open [EveJS Launcher 1.0.52](https://github.com/V0nCleef/evejs-launcher/releases/tag/v1.0.52).
 2. In **Settings**, check that **EveJS Root** is the folder containing `package.json` and `Play.bat`, and **EVE Client Path** is the game's `tq` folder. This launcher-mod workflow uses **Native — run directly on Windows**, not Docker.
-3. Download **`EveJS-DLSS5-0.5.6.zip`** from the [DLSS5 release page](https://github.com/V0nCleef/EveJS-DLSS5/releases/tag/v0.5.6). Choose this file under **Assets**, not **Source code**.
+3. Download **`EveJS-DLSS5-0.5.7.zip`** from the [DLSS5 release page](https://github.com/V0nCleef/EveJS-DLSS5/releases/tag/v0.5.7). Choose this file under **Assets**, not **Source code**.
 4. Right-click the ZIP and choose **Extract All**. Do not run anything from inside the ZIP.
 5. In the launcher, open **Mods → Open Mod Folder**. If it says **Create Mod Folder**, click that first. Place the extracted **`DLSS5` folder** directly inside that Mods folder.
 6. Click **Refresh**. You should see **EveJS DLSS5** with **ENABLED-AUTO**. It is enabled automatically; there is no extra checkbox to turn on.
@@ -65,7 +65,7 @@ Do not put another `DLSS5` folder inside `mods/DLSS5`. Keep the entire extracted
 
 Use this if you normally start EveJS with its `.bat` files.
 
-1. Download **`EveJS-DLSS5-0.5.6.zip`** from the [release page](https://github.com/V0nCleef/EveJS-DLSS5/releases/tag/v0.5.6).
+1. Download **`EveJS-DLSS5-0.5.7.zip`** from the [release page](https://github.com/V0nCleef/EveJS-DLSS5/releases/tag/v0.5.7).
 2. Right-click it → **Extract All**. Keep the complete `DLSS5` folder somewhere with a short path, for example `D:\DLSS5`. Keep it for uninstalling later.
 3. Close your game clients and double-click **`Install-DLSS5.bat`** inside that folder.
 4. When asked for your EveJS folder, paste the folder containing **`package.json` and `Play.bat`**, then press Enter. This is **not** your `tq` client folder. The installer reads the client location from your EveJS setup; if it separately asks for the client folder, select `tq`.
@@ -122,17 +122,25 @@ Keep the client-scoped backups in **`the folder containing tq\_evejs\dlss5\insta
 
 ## Updating later
 
-Close all clients → uninstall the old version using its original package or the launcher → follow the new release's instructions.
+For the 0.5.6 → 0.5.7 hotfix, close every client and replace the complete
+`mods\DLSS5` package folder with 0.5.7. No client reinstall is needed because the
+renderer payload and client-scoped receipt are unchanged. Use Launcher 1.0.52.
 
-Do not overwrite an installed old package, delete its backups, or move the client folder before uninstalling.
+For other version changes, follow that release's upgrade instructions. Do not
+assume an in-place package replacement is safe unless the release explicitly
+says so.
+
+Unless a release explicitly permits a package-only replacement, do not overwrite
+an installed old package, delete its backups, or move the client folder before
+uninstalling.
 
 ## Moving to a newer EveJS folder
 
-For 0.5.6 and later, close every game client, copy the complete `mods\DLSS5` folder into the new EveJS root, select that root in Launcher 1.0.51, then launch a character. If the old and new EveJS roots are immediate siblings and use the same physical `tq`, the manager verifies the old receipt, payload, backups and configuration, restores the old root, archives its receipt unchanged, and creates a fresh receipt for the new root.
+For 0.5.6 and later, close every game client, copy the complete `mods\DLSS5` folder into the new EveJS root, select that root in its matching launcher, then launch a character. If the old and new EveJS roots are immediate siblings and use the same physical `tq`, the manager verifies the old receipt, payload, backups and configuration, restores the old root, archives its receipt unchanged, and creates a fresh receipt for the new root.
 
 Do **not** copy or edit `_evejs\dlss5\install`; it follows the physical client automatically. Character, item, server and market databases are not DLSS5 files and are never migration targets.
 
-Version 0.5.5 used root-local state. Its active installation must be explicitly restored with the original 0.5.5 package before the first 0.5.6 installation. Version 0.5.6 refuses to silently adopt or relabel that old receipt.
+Version 0.5.5 used root-local state. Its active installation must be explicitly restored with the original 0.5.5 package before the first 0.5.6-or-later installation. Client-scoped packages refuse to silently adopt or relabel that old receipt.
 
 ## Quick help
 
@@ -154,7 +162,7 @@ That is normal. Turning off an effect is not uninstalling it.
 
 **Do I need the mod to update my launcher?**
 
-No. Launcher 1.0.51 works without DLSS5. Updating the launcher alone does not install this mod.
+No. Launcher 1.0.52 works without DLSS5. Updating the launcher alone does not install this mod.
 
 **Something failed.**
 

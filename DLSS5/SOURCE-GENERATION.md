@@ -1,11 +1,11 @@
-# Local source generation - 0.5.6
+# Local source generation - 0.5.7 package / 0.5.6 payload
 
-This final-version candidate retains the exact source helpers, templates,
-runner, native DLL and generated V12 runtime of the prior 0.5.5 release. Version
-0.5.6 changes install ownership and client-scoped state only; these payload bytes
-remain unchanged.
-Only release identity, trust pins and licensing/documentation are finalized.
-Neither final package nor matching launcher 1.0.51 is manually accepted yet.
+The 0.5.7 package retains the exact 0.5.6 payload manifest, source helpers,
+templates, runner, native DLL and generated V12 runtime. It changes only the
+manager's read-only validation of the documented `NeuralUplift` runtime Boolean.
+The client receipt therefore remains integration version 0.5.6 and no renderer
+payload migration is performed. Neither the 0.5.7 package nor matching launcher
+1.0.52 is manually accepted yet.
 
 This packaging candidate replaces the two distributed adapted-client method
 bodies with source-only templates and a narrow, data-only Python 2.7 emitter.

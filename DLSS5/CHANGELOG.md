@@ -1,4 +1,16 @@
-# 0.5.6 - release candidate, not published
+# 0.5.7 - release candidate, not published
+
+- Fix second and later launcher starts after RenoDX or F6 persists
+  `NeuralUplift=0` in `ReShade.ini`.
+- Treat `NeuralUplift` as the documented live Boolean preference: both `0` and
+  `1` verify, while a missing, duplicate, or out-of-domain value still fails
+  closed. Other launcher-owned ReShade keys remain exact.
+- Keep the 0.5.6 client payload, receipt schema, downloads, backups, and renderer
+  behavior byte-for-byte unchanged. Existing 0.5.6 installations do not need a
+  client reinstall; replace the package while every client is closed and use the
+  matching EveJS Launcher 1.0.52.
+
+# 0.5.6 - 2026-09-05
 
 - Accept any sane `eve.js` package version while keeping the physical EVE client
   build, executable, generated guard and third-party payload bytes exactly pinned.

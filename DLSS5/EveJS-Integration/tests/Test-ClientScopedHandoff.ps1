@@ -213,7 +213,7 @@ function Invoke-FixtureManager {
         $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
         Write-Host $output
         Assert-Equal $ExpectedExit $process.ExitCode "$Root $SelectedAction exit"
-        if ($ExpectedMessage -and $output -notlike ('*' + $ExpectedMessage + '*')) {
+        if ($ExpectedMessage -and $output.IndexOf($ExpectedMessage, [StringComparison]::Ordinal) -lt 0) {
             throw "Manager output did not contain '$ExpectedMessage'."
         }
     } finally { $process.Dispose() }
@@ -445,11 +445,24 @@ function Invoke-RecoveryRollback {
     Assert-Equal $installedClient (Get-TreeSnapshot $client) 'Successful handoff RootB client bytes'
     Write-Host 'PASS completed sibling handoffs restore the old root and create a fresh target-root receipt' -ForegroundColor Green
 
+    $reshadeIni = Join-Path $client 'bin64\ReShade.ini'
+    $reshadeText = [IO.File]::ReadAllText($reshadeIni)
+    Assert-Equal 1 ([Regex]::Matches($reshadeText, '(?m)^NeuralUplift=1\r?$').Count) 'Installed NeuralUplift default count'
+    Write-FixtureText $reshadeIni ([Regex]::Replace($reshadeText, '(?m)^NeuralUplift=1\r?$', 'NeuralUplift=0'))
     $activeHash = (Get-FileHash -LiteralPath $activeManifest -Algorithm SHA256).Hash
+    $runtimePreferenceClient = Get-TreeSnapshot $client
     Invoke-FixtureManager RootB Ensure -ExpectedMessage 'read-only verification'
     Assert-Equal $activeHash ((Get-FileHash -LiteralPath $activeManifest -Algorithm SHA256).Hash) 'Same-root Ensure receipt hash'
-    Assert-Equal $installedClient (Get-TreeSnapshot $client) 'Same-root Ensure client bytes'
-    Write-Host 'PASS same-root Ensure remains byte-for-byte read-only' -ForegroundColor Green
+    Assert-Equal $runtimePreferenceClient (Get-TreeSnapshot $client) 'Same-root Ensure client bytes after NeuralUplift runtime change'
+    Write-Host 'PASS same-root Ensure accepts persisted NeuralUplift off and remains byte-for-byte read-only' -ForegroundColor Green
+
+    Write-FixtureText $reshadeIni ([Regex]::Replace([IO.File]::ReadAllText($reshadeIni), '(?m)^NeuralUplift=0\r?$', 'NeuralUplift=2'))
+    $invalidPreferenceClient = Get-TreeSnapshot $client
+    Invoke-FixtureManager RootB Ensure -ExpectedExit 1 -ExpectedMessage 'ReShade.ini mismatch: [RenoDX.DLSS5] NeuralUplift'
+    Assert-Equal $activeHash ((Get-FileHash -LiteralPath $activeManifest -Algorithm SHA256).Hash) 'Invalid NeuralUplift receipt hash'
+    Assert-Equal $invalidPreferenceClient (Get-TreeSnapshot $client) 'Invalid NeuralUplift rejection client bytes'
+    Write-FixtureText $reshadeIni ([Regex]::Replace([IO.File]::ReadAllText($reshadeIni), '(?m)^NeuralUplift=2\r?$', 'NeuralUplift=0'))
+    Write-Host 'PASS same-root Ensure still rejects NeuralUplift outside its runtime Boolean domain' -ForegroundColor Green
 
     Invoke-FixtureManager RootB Restore -ExpectedMessage 'Original client files and EveJS config restored'
     Invoke-FixtureManager RootA Ensure -ExpectedMessage 'root handoff completed'
@@ -464,7 +477,7 @@ function Invoke-RecoveryRollback {
     Assert-Equal $stockConfigA ((Get-FileHash -LiteralPath $configA -Algorithm SHA256).Hash) 'Final RootA config'
     Assert-Equal $stockConfigB ((Get-FileHash -LiteralPath $configB -Algorithm SHA256).Hash) 'Final RootB config'
     Write-Host 'PASS final rollback restores client plus both sibling EveJS configurations' -ForegroundColor Green
-    Write-Host 'Client-scoped handoff fixture: 17 passed; no live client, GUI, or network touched.'
+    Write-Host 'Client-scoped handoff fixture: 18 passed; no live client, GUI, or network touched.'
 } finally {
     if ($KeepFixtures) {
         Write-Host "Disposable fixture retained for inspection: $script:FixtureRoot"

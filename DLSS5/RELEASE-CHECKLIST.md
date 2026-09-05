@@ -1,8 +1,8 @@
-# Release gates: DLSS5 0.5.6 + launcher 1.0.51
+# Release gates: DLSS5 0.5.7 + launcher 1.0.52
 
-Status: unpublished final-version source candidate. Neither final artifact is
-manually accepted. Prior 0.5.4, 0.5.5-dev and 0.5.5 results are historical evidence,
-not automatic acceptance of this pair.
+Status: unpublished hotfix source candidate. Neither final artifact is manually
+accepted. Prior 0.5.6/1.0.51 results are historical evidence, not automatic
+acceptance of this pair.
 
 ## Exact source and artifact checks
 
@@ -10,8 +10,8 @@ not automatic acceptance of this pair.
   third-party exclusions; preserve existing file-level BSD markers.
 - [x] Add project LICENSE/LICENSING.md and the Microsoft header notice without
   changing bundled binaries or historical native source/provenance records.
-- [x] Retain native, downloaded-component, generated-archive and tool/template
-  bytes while changing only installer ownership/state handling for 0.5.6.
+- [x] Retain the complete 0.5.6 payload and receipt contract while changing only
+  read-only validation of the user-controlled `NeuralUplift` Boolean.
 - [x] Store schema-5 mutable state at `<tq parent>\_evejs\dlss5\install`, reject
   reparse-point state paths and leave schema-4 root-local receipts explicit.
 - [x] Fixture-test failed and successful sibling handoffs, terminal-receipt
@@ -29,7 +29,7 @@ not automatic acceptance of this pair.
 
 ## Manual acceptance
 
-- [ ] User tests the exact final 0.5.6 package and matching launcher 1.0.51.
+- [ ] User tests the exact final 0.5.7 package and matching launcher 1.0.52.
 - [ ] Record the actual settings/routes tested; do not infer an unperformed
   graphics matrix, hardware matrix or longer-session pass.
 - [ ] Retain standalone installation/uninstallation coverage as well as

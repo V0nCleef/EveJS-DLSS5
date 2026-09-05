@@ -2,7 +2,7 @@
   "schemaVersion": 3,
   "id": "evejs-dlss5",
   "displayName": "EveJS DLSS5",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "description": "Automatic DLSS5 renderer integration for EveJS clients with guarded rollback and per-profile ReShade state.",
   "kind": "client-package",
   "activation": "automatic",
@@ -10,7 +10,7 @@
   "manager": {
     "path": "EveJS-Integration/Manage-EveJSDLSS5.ps1",
     "protocol": "evejs_dlss5_manager_v1",
-    "sha256": "F841291D2939931D02B5C5E8AC009DD55AEA3C1315DDE08DC92D222B2666B5DC"
+    "sha256": "799B17BDBAD0B5808A47096F484B9072E829469AEA3A153BDDC1FA67B24F0FB3"
   },
   "compatibility": {
     "evejsVersionPolicy": "any",
