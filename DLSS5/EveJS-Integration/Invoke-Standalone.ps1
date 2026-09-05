@@ -13,6 +13,31 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Resolve-StandalonePhysicalPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $full = [IO.Path]::GetFullPath($Path)
+    $volume = [IO.Path]::GetPathRoot($full)
+    $current = $volume
+    foreach ($part in @($full.Substring($volume.Length) -split '[\\/]' | Where-Object { $_ })) {
+        $candidate = Join-Path $current $part
+        $item = Get-Item -LiteralPath $candidate -Force -ErrorAction SilentlyContinue
+        if ($null -ne $item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            $targets = @($item.Target)
+            if ($targets.Count -ne 1 -or -not $targets[0]) {
+                throw "Cannot resolve reparse point unambiguously: $candidate"
+            }
+            $target = [string]$targets[0]
+            if (-not [IO.Path]::IsPathRooted($target)) {
+                $target = Join-Path (Split-Path -Parent $candidate) $target
+            }
+            $current = [IO.Path]::GetFullPath($target)
+        } else {
+            $current = $candidate
+        }
+    }
+    return [IO.Path]::GetFullPath($current).TrimEnd('\')
+}
+
 function Resolve-EveJSDlss5StandaloneTarget {
     param(
         [Parameter(Mandatory = $true)][string]$PackageRoot,
@@ -50,14 +75,30 @@ function Resolve-EveJSDlss5StandaloneTarget {
         throw "The selected folder has no package.json: $evejsRoot"
     }
     $packageJson = [IO.File]::ReadAllText($packageJsonPath, [Text.Encoding]::UTF8) | ConvertFrom-Json
-    if (-not ([string]$packageJson.name).Equals('eve.js', [StringComparison]::Ordinal) -or
-        [string]$packageJson.version -notin @('0.12.6', '0.12.7')) {
-        throw 'The selected folder must contain EveJS 0.12.6 or 0.12.7 (package name eve.js).'
+    $packageProperties = @($packageJson.PSObject.Properties.Name)
+    $evejsVersion = if ($packageProperties -contains 'version') { ([string]$packageJson.version).Trim() } else { '' }
+    if ($packageProperties -notcontains 'name' -or
+        -not ([string]$packageJson.name).Equals('eve.js', [StringComparison]::Ordinal) -or
+        [string]::IsNullOrWhiteSpace($evejsVersion) -or
+        $evejsVersion.Length -gt 64 -or
+        $evejsVersion -notmatch '^[0-9A-Za-z][0-9A-Za-z._+-]*$' -or
+        $evejsVersion.Contains('..')) {
+        throw 'The selected folder must contain an eve.js package with a non-empty, sane version string.'
     }
 
     $configPath = Join-Path $evejsRoot 'tools\ClientSETUP\scripts\EvEJSConfig.bat'
     if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
         throw "EveJS client configuration is missing: $configPath"
+    }
+    $configLayoutText = [IO.File]::ReadAllText($configPath)
+    foreach ($requiredSetting in @('EVEJS_CLIENT_PATH', 'EVEJS_CLIENT_EXE')) {
+        $settingMatches = [Regex]::Matches(
+            $configLayoutText,
+            '(?im)^\s*set\s+"' + [Regex]::Escape($requiredSetting) + '=[^"]*"\s*$'
+        )
+        if ($settingMatches.Count -ne 1) {
+            throw "EvEJSConfig.bat must contain exactly one quoted $requiredSetting setting."
+        }
     }
     $client = $SelectedClientRoot.Trim().Trim('"')
     if (-not $client) {
@@ -93,12 +134,13 @@ function Resolve-EveJSDlss5StandaloneTarget {
     if ($clientItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
         throw 'The selected client root is a reparse point. Select its real tq folder.'
     }
+    $client = Resolve-StandalonePhysicalPath $client
 
     return [pscustomobject][ordered]@{
         WorkspaceRoot = [IO.Path]::GetFullPath((Split-Path -Parent $evejsRoot)).TrimEnd('\')
         EveJSRootPath = $evejsRoot
         ClientRoot = $client
-        StateRootPath = Join-Path $evejsRoot '_local\dlss5\install'
+        StateRootPath = Join-Path (Split-Path -Parent $client) '_evejs\dlss5\install'
     }
 }
 
@@ -115,7 +157,7 @@ try {
     }
     Write-Host "EveJS root: $($target.EveJSRootPath)"
     Write-Host "Client:     $($target.ClientRoot)"
-    Write-Host "Backups:    $($target.StateRootPath)"
+    Write-Host "Client state: $($target.StateRootPath)"
     Write-Host ''
     $manager = Join-Path $PSScriptRoot 'Manage-EveJSDLSS5.ps1'
     & $manager `

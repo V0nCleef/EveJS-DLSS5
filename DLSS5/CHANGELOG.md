@@ -1,3 +1,25 @@
+# 0.5.6 - release candidate, not published
+
+- Accept any sane `eve.js` package version while keeping the physical EVE client
+  build, executable, generated guard and third-party payload bytes exactly pinned.
+- Move mutable install receipts, rollback backups and reusable cache out of the
+  EveJS server tree to `<tq parent>\_evejs\dlss5\install`, so they follow the
+  physical client across side-by-side EveJS upgrades.
+- Add a guarded sibling-root handoff. `Ensure` verifies the old receipt, payload,
+  installed bytes, configuration and every backup; restores the old root; moves
+  its terminal receipt unchanged into history; then makes a fresh target receipt.
+- Leave the client stock and recoverable when target installation fails. Reject
+  reparse points in the state hierarchy and refuse to copy, relabel or silently
+  adopt legacy 0.5.5 root-local receipts.
+- Add schema-3 launcher metadata with `evejsVersionPolicy: any` and schema-5
+  client-scoped receipts. Pair this package with EveJS Launcher 1.0.51.
+- Keep the complete runtime payload byte-for-byte unchanged from 0.5.5. This is
+  an ownership/upgrade-safety release, not a renderer behavior change.
+
+One-time upgrade: restore an active 0.5.5 installation with its original package
+before installing 0.5.6. After that cutover, copying `mods\DLSS5` between immediate
+sibling EveJS roots that share one `tq` is the supported upgrade path.
+
 # 0.5.5 - release candidate, not published
 
 - Install as an automatically detected launcher mod or with the standalone

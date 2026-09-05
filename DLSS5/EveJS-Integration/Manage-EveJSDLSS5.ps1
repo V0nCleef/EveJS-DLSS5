@@ -26,6 +26,31 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Resolve-InitialPhysicalPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $full = [IO.Path]::GetFullPath($Path)
+    $volume = [IO.Path]::GetPathRoot($full)
+    $current = $volume
+    foreach ($part in @($full.Substring($volume.Length) -split '[\\/]' | Where-Object { $_ })) {
+        $candidate = Join-Path $current $part
+        $item = Get-Item -LiteralPath $candidate -Force -ErrorAction SilentlyContinue
+        if ($null -ne $item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            $targets = @($item.Target)
+            if ($targets.Count -ne 1 -or -not $targets[0]) {
+                throw "Cannot resolve reparse point unambiguously: $candidate"
+            }
+            $target = [string]$targets[0]
+            if (-not [IO.Path]::IsPathRooted($target)) {
+                $target = Join-Path (Split-Path -Parent $candidate) $target
+            }
+            $current = [IO.Path]::GetFullPath($target)
+        } else {
+            $current = $candidate
+        }
+    }
+    return [IO.Path]::GetFullPath($current).TrimEnd("\\")
+}
+
 $script:IntegrationRoot = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd("\\")
 $script:DlssRoot = [IO.Path]::GetFullPath((Split-Path -Parent $script:IntegrationRoot)).TrimEnd("\\")
 $packageParent = [IO.Path]::GetFullPath((Split-Path -Parent $script:DlssRoot)).TrimEnd("\\")
@@ -51,14 +76,15 @@ if ($WorkspaceRoot) {
     $script:WorkspaceRoot = $defaultWorkspaceRoot
 }
 
-$defaultEveJSRoot = if ($detectedEveJSRoot) { $detectedEveJSRoot } else { Join-Path $script:WorkspaceRoot "v0.12.6" }
 if ($EveJSRootPath) {
     if (-not [IO.Path]::IsPathRooted($EveJSRootPath)) {
         throw "EveJSRootPath must be an absolute path."
     }
     $script:EveJSRoot = [IO.Path]::GetFullPath($EveJSRootPath).TrimEnd("\\")
+} elseif ($detectedEveJSRoot) {
+    $script:EveJSRoot = [IO.Path]::GetFullPath($detectedEveJSRoot).TrimEnd("\\")
 } else {
-    $script:EveJSRoot = [IO.Path]::GetFullPath($defaultEveJSRoot).TrimEnd("\\")
+    throw "EveJSRootPath is required when the DLSS5 package is not inside an EveJS mods folder."
 }
 
 $defaultClientRoot = Join-Path $script:WorkspaceRoot "EVE Online - 3396210\EVE Online - 3396210\tq"
@@ -66,9 +92,9 @@ if ($ClientRoot) {
     if (-not [IO.Path]::IsPathRooted($ClientRoot)) {
         throw "ClientRoot must be an absolute path."
     }
-    $script:ClientRoot = [IO.Path]::GetFullPath($ClientRoot).TrimEnd("\\")
+    $script:ClientRoot = Resolve-InitialPhysicalPath $ClientRoot
 } else {
-    $script:ClientRoot = [IO.Path]::GetFullPath($defaultClientRoot).TrimEnd("\\")
+    $script:ClientRoot = Resolve-InitialPhysicalPath $defaultClientRoot
 }
 $script:BinRoot = Join-Path $script:ClientRoot "bin64"
 $script:ExePath = Join-Path $script:BinRoot "exefile.exe"
@@ -76,13 +102,17 @@ $script:ConfigPath = Join-Path $script:EveJSRoot "tools\ClientSETUP\scripts\EvEJ
 $script:PayloadManifestPath = Join-Path $script:IntegrationRoot "payload-manifest.json"
 $script:PublicPayloadHelperPath = Join-Path $script:IntegrationRoot "Public-Payload.ps1"
 $script:StateDirectory = $StateDirectory
+$expectedClientStateRoot = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $script:ClientRoot) "_evejs\dlss5\install")).TrimEnd("\\")
 if ($StateRootPath) {
     if (-not [IO.Path]::IsPathRooted($StateRootPath)) {
         throw "StateRootPath must be an absolute path."
     }
     $script:StateRoot = [IO.Path]::GetFullPath($StateRootPath).TrimEnd("\\")
+    if (-not $script:StateRoot.Equals($expectedClientStateRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "StateRootPath must use the client-scoped location '$expectedClientStateRoot'."
+    }
 } else {
-    $script:StateRoot = Join-Path $script:IntegrationRoot $script:StateDirectory
+    $script:StateRoot = $expectedClientStateRoot
 }
 $script:CacheRoot = Join-Path $script:StateRoot "cache"
 $script:PayloadRoot = Join-Path $script:CacheRoot "payload"
@@ -91,8 +121,8 @@ $script:BaselinePath = Join-Path $script:StateRoot "baseline-tq.json"
 $script:ReShadeConfigPath = Join-Path $script:BinRoot "ReShade.ini"
 $script:ReShadeLogPath = Join-Path $script:BinRoot "ReShade.log"
 $script:ExpectedExeSha256 = "2AAF7A9A8DFCDE85E4ADB50C1ECCD3756A4D29AEB854DFE69629846BA56EE979"
-$script:ExpectedPublicPayloadHelperSha256 = "F459F120A6062067E003A70DC1955FCEC603A56A4AA2B1617D45CEDFBF5998CE"
-$script:ExpectedPayloadManifestSha256 = "462A37AF0E9EFCB2A9AE1D7700E5CFC57CD33FD17C86A467BA7244170939D897"
+$script:ExpectedPublicPayloadHelperSha256 = "B21B06F0EFD561E45DABAC6174D2FA71870EDF3923FE3140D591332AE7091EAA"
+$script:ExpectedPayloadManifestSha256 = "B722CD61F078C7079BC76085BB14127062FA7B2E67B294A79C28864E061CDB4B"
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $script:ManagedReShadeKeys = @(
     [pscustomobject][ordered]@{
@@ -222,6 +252,51 @@ function Get-PhysicalPath {
     return (Get-NormalizedPath $current)
 }
 
+function Assert-NoReparsePointsInExistingPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$BoundaryName
+    )
+
+    $full = Get-NormalizedPath $Path
+    $volume = [IO.Path]::GetPathRoot($full)
+    if (-not $volume) {
+        throw "Cannot validate an unrooted $BoundaryName path: $full"
+    }
+
+    $current = $volume
+    foreach ($part in @($full.Substring($volume.Length) -split '[\\/]' | Where-Object { $_ })) {
+        $current = Join-Path $current $part
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+        if ($null -ne $item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Refusing a reparse point in the $BoundaryName path: $current"
+        }
+    }
+    return $full
+}
+
+function Assert-ClientScopedStateBoundary {
+    $physicalClient = Get-PhysicalPath $script:ClientRoot
+    $expectedState = Get-NormalizedPath (Join-Path (Split-Path -Parent $physicalClient) "_evejs\dlss5\install")
+    $selectedState = Get-NormalizedPath $script:StateRoot
+    if (-not $selectedState.Equals($expectedState, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "DLSS5 mutable state must be client-scoped at '$expectedState'."
+    }
+
+    Assert-NoReparsePointsInExistingPath -Path $selectedState -BoundaryName "client-scoped state" | Out-Null
+
+    # These are the only mutable top-level state trees owned by the manager or
+    # the reviewed payload helper. Reject a pre-existing junction even before
+    # an operation needs that tree, so no receipt or backup can be redirected
+    # between preflight and rollback.
+    foreach ($ownedChild in @("cache", "backups", "history", "uninstall-preserved")) {
+        Assert-NoReparsePointsInExistingPath `
+            -Path (Join-Path $selectedState $ownedChild) `
+            -BoundaryName "client-scoped state" | Out-Null
+    }
+    return $selectedState
+}
+
 function Test-FileDirectlyInDirectory {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
@@ -253,11 +328,64 @@ function Assert-PathInsideRoot {
     return $full
 }
 
+function Assert-ClientScopedStatePath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Assert-ClientScopedStateBoundary | Out-Null
+    $full = Assert-PathInsideRoot -Path $Path -Root $script:StateRoot -BoundaryName "client-scoped state"
+    Assert-NoReparsePointsInExistingPath -Path $full -BoundaryName "client-scoped state" | Out-Null
+    return $full
+}
+
+function Assert-OwnedClientPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $full = Assert-PathInsideRoot -Path $Path -Root $script:ClientRoot -BoundaryName "owned client"
+    Assert-NoReparsePointsInExistingPath -Path $full -BoundaryName "owned client" | Out-Null
+    return $full
+}
+
+function Assert-OwnedEveJSPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $full = Assert-PathInsideRoot -Path $Path -Root $script:EveJSRoot -BoundaryName "owned EveJS"
+    Assert-NoReparsePointsInExistingPath -Path $full -BoundaryName "owned EveJS" | Out-Null
+    return $full
+}
+
 function Assert-PathInsideAuthorizedRoots {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     $full = Get-NormalizedPath $Path
-    foreach ($root in @($script:IntegrationRoot, $script:WorkspaceRoot, $script:ClientRoot, $script:StateRoot)) {
+
+    # State may sit lexically below WorkspaceRoot in synthetic or portable
+    # layouts. Check it first so a broad workspace match can never bypass the
+    # physical no-reparse policy for receipts, backups, cache, or history.
+    try {
+        return (Assert-ClientScopedStatePath -Path $full)
+    } catch {
+        if ($_.Exception.Message -notlike "Refusing path outside the authorized client-scoped state boundary:*") {
+            throw
+        }
+    }
+
+    try {
+        return (Assert-OwnedClientPath -Path $full)
+    } catch {
+        if ($_.Exception.Message -notlike "Refusing path outside the authorized owned client boundary:*") {
+            throw
+        }
+    }
+
+    try {
+        return (Assert-OwnedEveJSPath -Path $full)
+    } catch {
+        if ($_.Exception.Message -notlike "Refusing path outside the authorized owned EveJS boundary:*") {
+            throw
+        }
+    }
+
+    foreach ($root in @($script:IntegrationRoot, $script:WorkspaceRoot)) {
         try {
             return (Assert-PathInsideRoot -Path $full -Root $root -BoundaryName "write")
         } catch {
@@ -480,10 +608,11 @@ function Get-NeuralLogEvidence {
 
 function Test-FileAbsentFromBaseline {
     param([Parameter(Mandatory = $true)][string]$RelativePath)
-    if (-not (Test-Path -LiteralPath $script:BaselinePath -PathType Leaf)) {
-        throw "Client baseline is missing: $script:BaselinePath"
+    $baselinePath = Assert-ClientScopedStatePath -Path $script:BaselinePath
+    if (-not (Test-Path -LiteralPath $baselinePath -PathType Leaf)) {
+        throw "Client baseline is missing: $baselinePath"
     }
-    $baseline = Get-Content -LiteralPath $script:BaselinePath -Raw | ConvertFrom-Json
+    $baseline = Get-Content -LiteralPath $baselinePath -Raw | ConvertFrom-Json
     Assert-BaselineTargets -Baseline $baseline
     foreach ($file in @($baseline.files)) {
         if (([string]$file.path).Equals($RelativePath, [StringComparison]::OrdinalIgnoreCase)) {
@@ -495,6 +624,13 @@ function Test-FileAbsentFromBaseline {
 
 function Assert-BaselineTargets {
     param([Parameter(Mandatory = $true)]$Baseline)
+
+    if (-not ($Baseline.PSObject.Properties.Name -contains "schemaVersion") -or
+        [int]$Baseline.schemaVersion -ne 5 -or
+        -not ($Baseline.PSObject.Properties.Name -contains "stateScope") -or
+        -not ([string]$Baseline.stateScope).Equals("client", [StringComparison]::Ordinal)) {
+        throw "The client-scoped baseline must use schemaVersion 5 and stateScope client."
+    }
 
     if (-not ($Baseline.PSObject.Properties.Name -contains "clientRoot") -or
         -not $Baseline.clientRoot) {
@@ -540,13 +676,10 @@ function Assert-BaselineTargets {
 }
 
 function Assert-NoTargetClientProcess {
-    $targetExe = Get-PhysicalPath $script:ExePath
-    foreach ($process in @(Get-Process -Name "exefile" -ErrorAction SilentlyContinue)) {
-        $processPath = $null
-        try { $processPath = $process.Path } catch { }
-        if ($processPath -and (Get-PhysicalPath $processPath).Equals($targetExe, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "The selected EVE client is running as PID $($process.Id). Close it before changing DLLs."
-        }
+    $processes = @(Get-Process -Name "exefile" -ErrorAction SilentlyContinue)
+    if ($processes.Count -gt 0) {
+        $processIds = @($processes | ForEach-Object { [string]$_.Id }) -join ", "
+        throw "An EVE client process is running (exefile.exe PID $processIds). Close every EVE client before changing shared DLLs or configuration."
     }
 }
 
@@ -617,6 +750,13 @@ function Read-PayloadManifest {
 function Assert-ManifestTargets {
     param([Parameter(Mandatory = $true)]$Manifest)
 
+    if (-not ($Manifest.PSObject.Properties.Name -contains "schemaVersion") -or
+        [int]$Manifest.schemaVersion -ne 5 -or
+        -not ($Manifest.PSObject.Properties.Name -contains "stateScope") -or
+        -not ([string]$Manifest.stateScope).Equals("client", [StringComparison]::Ordinal)) {
+        throw "The client-scoped install journal must use schemaVersion 5 and stateScope client. Legacy root-local journals are not adopted."
+    }
+
     if (-not ($Manifest.PSObject.Properties.Name -contains "workspaceRoot") -or
         -not $Manifest.workspaceRoot) {
         throw "The install journal does not record its EveJS workspace root. Refusing an ambiguous target."
@@ -680,21 +820,20 @@ function Assert-ManifestTargets {
     } else {
         Join-Path $script:IntegrationRoot ([string]$Manifest.backupDirectory)
     }
-    Assert-PathInsideRoot -Path $recordedBackupRoot -Root $script:StateRoot -BoundaryName "state" | Out-Null
+    $recordedBackupRoot = Assert-ClientScopedStatePath -Path $recordedBackupRoot
 
     foreach ($operation in @($Manifest.operations)) {
-        $source = Join-Path $script:PayloadRoot ([string]$operation.source)
-        $destination = Join-Path $script:ClientRoot ([string]$operation.destination)
+        $source = Assert-ClientScopedStatePath -Path (Join-Path $script:PayloadRoot ([string]$operation.source))
+        $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
         Assert-PathInsideRoot -Path $source -Root $script:PayloadRoot -BoundaryName "payload" | Out-Null
-        Assert-PathInsideRoot -Path $destination -Root $script:ClientRoot -BoundaryName "client" | Out-Null
         if ($operation.backup) {
-            $backup = Join-Path $recordedBackupRoot ([string]$operation.backup)
+            $backup = Assert-ClientScopedStatePath -Path (Join-Path $recordedBackupRoot ([string]$operation.backup))
             Assert-PathInsideRoot -Path $backup -Root $recordedBackupRoot -BoundaryName "backup" | Out-Null
         }
     }
 
     if ($Manifest.config -and $Manifest.config.backup) {
-        $configBackup = Join-Path $recordedBackupRoot ([string]$Manifest.config.backup)
+        $configBackup = Assert-ClientScopedStatePath -Path (Join-Path $recordedBackupRoot ([string]$Manifest.config.backup))
         Assert-PathInsideRoot -Path $configBackup -Root $recordedBackupRoot -BoundaryName "backup" | Out-Null
     }
     if ($Manifest.config -and
@@ -707,11 +846,24 @@ function Assert-ManifestTargets {
     }
 }
 
-function Read-ActiveManifest {
-    if (-not (Test-Path -LiteralPath $script:ActiveManifestPath -PathType Leaf)) {
+function Read-ActiveManifestRaw {
+    $activeManifestPath = Assert-ClientScopedStatePath -Path $script:ActiveManifestPath
+    if (-not (Test-Path -LiteralPath $activeManifestPath -PathType Leaf)) {
         return $null
     }
-    $manifest = Get-Content -LiteralPath $script:ActiveManifestPath -Raw | ConvertFrom-Json
+    $item = Get-Item -LiteralPath $activeManifestPath -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "The client-scoped install journal is a reparse point."
+    }
+    if ([Int64]$item.Length -lt 2 -or [Int64]$item.Length -gt 1048576) {
+        throw "The client-scoped install journal size is outside the supported limit."
+    }
+    return ([IO.File]::ReadAllText($activeManifestPath, [Text.Encoding]::UTF8) | ConvertFrom-Json)
+}
+
+function Read-ActiveManifest {
+    $manifest = Read-ActiveManifestRaw
+    if ($null -eq $manifest) { return $null }
     Assert-ManifestTargets -Manifest $manifest
     return $manifest
 }
@@ -1074,10 +1226,12 @@ function Initialize-ReShadeConfigTracking {
     $originalText = if ($exists) { [IO.File]::ReadAllText($script:ReShadeConfigPath) } else { "" }
     $backupRelative = if ($exists) { "support\ReShade.ini" } else { $null }
     if ($exists) {
-        $backup = Join-Path (Get-BackupRoot $Manifest) $backupRelative
-        New-Item -ItemType Directory -Path (Split-Path -Parent $backup) -Force | Out-Null
-        Copy-Item -LiteralPath $script:ReShadeConfigPath -Destination $backup
-        if ((Get-Sha256 $backup) -ne (Get-Sha256 $script:ReShadeConfigPath)) {
+        $backup = Assert-ClientScopedStatePath -Path (Join-Path (Get-BackupRoot $Manifest) $backupRelative)
+        $backupParent = Assert-ClientScopedStatePath -Path (Split-Path -Parent $backup)
+        New-Item -ItemType Directory -Path $backupParent -Force | Out-Null
+        $originalReShadeHash = Get-Sha256 $script:ReShadeConfigPath
+        Copy-FileAtomic -Source $script:ReShadeConfigPath -Destination $backup -ExpectedSha256 $originalReShadeHash
+        if ((Get-Sha256 $backup) -ne $originalReShadeHash) {
             throw "Backup verification failed for pre-existing ReShade.ini"
         }
     }
@@ -1127,7 +1281,7 @@ function Set-ReShadeConfigForProfile {
     if ($exists) {
         $text = [IO.File]::ReadAllText($script:ReShadeConfigPath)
     } elseif ([bool]$Manifest.reshadeConfig.originalExists) {
-        $backup = Join-Path (Get-BackupRoot $Manifest) ([string]$Manifest.reshadeConfig.backup)
+        $backup = Assert-ClientScopedStatePath -Path (Join-Path (Get-BackupRoot $Manifest) ([string]$Manifest.reshadeConfig.backup))
         if (-not (Test-Path -LiteralPath $backup -PathType Leaf) -or
             (Get-Sha256 $backup) -ne [string]$Manifest.reshadeConfig.originalSha256) {
             throw "Original ReShade.ini backup is missing or invalid: $backup"
@@ -1210,9 +1364,9 @@ function Restore-ReShadeConfig {
     $currentExists = Test-Path -LiteralPath $script:ReShadeConfigPath -PathType Leaf
     $currentText = if ($currentExists) { [IO.File]::ReadAllText($script:ReShadeConfigPath) } else { "" }
     if ($currentExists) {
-        $preserveRoot = Join-Path $script:StateRoot ("uninstall-preserved\" + [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssfffZ"))
+        $preserveRoot = Assert-ClientScopedStatePath -Path (Join-Path $script:StateRoot ("uninstall-preserved\" + [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssfffZ")))
         New-Item -ItemType Directory -Path $preserveRoot -Force | Out-Null
-        $preserved = Join-Path $preserveRoot "ReShade.ini"
+        $preserved = Assert-ClientScopedStatePath -Path (Join-Path $preserveRoot "ReShade.ini")
         Copy-Item -LiteralPath $script:ReShadeConfigPath -Destination $preserved
         $Manifest.reshadeConfig.preservedOnRestore = $preserved.Substring($script:StateRoot.Length + 1)
         Add-OrSetProperty -Object $Manifest.reshadeConfig -Name "preservedPathsRelativeTo" -Value "stateRoot"
@@ -1221,7 +1375,7 @@ function Restore-ReShadeConfig {
 
     $originalText = ""
     if ([bool]$Manifest.reshadeConfig.originalExists) {
-        $backup = Join-Path (Get-BackupRoot $Manifest) ([string]$Manifest.reshadeConfig.backup)
+        $backup = Assert-ClientScopedStatePath -Path (Join-Path (Get-BackupRoot $Manifest) ([string]$Manifest.reshadeConfig.backup))
         if (-not (Test-Path -LiteralPath $backup -PathType Leaf) -or
             (Get-Sha256 $backup) -ne [string]$Manifest.reshadeConfig.originalSha256) {
             throw "Original ReShade.ini backup is missing or invalid: $backup"
@@ -1260,13 +1414,13 @@ function Restore-ReShadeConfig {
 
     $preservedGenerated = New-Object System.Collections.Generic.List[string]
     foreach ($relativePath in @("bin64\ReShade.log", "bin64\ReShadePreset.ini")) {
-        $artifactPath = Join-Path $script:ClientRoot $relativePath
+        $artifactPath = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot $relativePath)
         if ((Test-Path -LiteralPath $artifactPath -PathType Leaf) -and (Test-FileAbsentFromBaseline -RelativePath $relativePath)) {
             if ($null -eq $preserveRoot) {
-                $preserveRoot = Join-Path $script:StateRoot ("uninstall-preserved\" + [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssfffZ"))
+                $preserveRoot = Assert-ClientScopedStatePath -Path (Join-Path $script:StateRoot ("uninstall-preserved\" + [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssfffZ")))
                 New-Item -ItemType Directory -Path $preserveRoot -Force | Out-Null
             }
-            $preserved = Join-Path $preserveRoot ([IO.Path]::GetFileName($relativePath))
+            $preserved = Assert-ClientScopedStatePath -Path (Join-Path $preserveRoot ([IO.Path]::GetFileName($relativePath)))
             Copy-Item -LiteralPath $artifactPath -Destination $preserved
             Remove-Item -LiteralPath (Assert-PathInsideRoot -Path $artifactPath -Root $script:ClientRoot -BoundaryName "client") -Force
             $preservedGenerated.Add($preserved.Substring($script:StateRoot.Length + 1))
@@ -1278,12 +1432,141 @@ function Restore-ReShadeConfig {
     $Manifest.reshadeConfig.restoredAtUtc = [DateTime]::UtcNow.ToString("o")
 }
 
+function Get-LiteralBatchSettingMatches {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    $escapedName = [Regex]::Escape($Name)
+    $pattern = '(?im)^\s*@?set\s+(?:"' + $escapedName + '=([^"\r\n]*)"|' + $escapedName + '=([^\r\n]*?))\s*$'
+    return @([Regex]::Matches($Text, $pattern))
+}
+
+function Get-LiteralBatchSettingCandidateCount {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    $pattern = '(?im)^\s*@?set\s+"?' + [Regex]::Escape($Name) + '='
+    return [Regex]::Matches($Text, $pattern).Count
+}
+
+function Get-LiteralBatchSettingValue {
+    param([Parameter(Mandatory = $true)]$Match)
+
+    if ($Match.Groups[1].Success) {
+        return [string]$Match.Groups[1].Value
+    }
+    return ([string]$Match.Groups[2].Value).TrimEnd()
+}
+
+function Assert-ExactBatchSettingValue {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ExpectedValue
+    )
+
+    $matches = @(Get-LiteralBatchSettingMatches -Text $Text -Name $Name)
+    $candidateCount = Get-LiteralBatchSettingCandidateCount -Text $Text -Name $Name
+    if ($matches.Count -ne 1 -or $candidateCount -ne 1) {
+        throw "EvEJSConfig.bat must contain exactly one literal $Name assignment."
+    }
+    $actualValue = Get-LiteralBatchSettingValue -Match $matches[0]
+    if (-not $actualValue.Equals($ExpectedValue, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "EvEJSConfig.bat $Name mismatch. Expected '$ExpectedValue', got '$actualValue'."
+    }
+}
+
+function Assert-EveJSRootContract {
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    $normalizedRoot = Get-NormalizedPath $Root
+    if (-not (Test-Path -LiteralPath $normalizedRoot -PathType Container)) {
+        throw "Required EveJS root is missing: $normalizedRoot"
+    }
+    Assert-NoReparsePointsInExistingPath -Path $normalizedRoot -BoundaryName "EveJS root" | Out-Null
+    $rootItem = Get-Item -LiteralPath $normalizedRoot -Force
+    if ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "The EveJS root is a reparse point: $normalizedRoot"
+    }
+
+    $packagePath = Join-Path $normalizedRoot "package.json"
+    Assert-NoReparsePointsInExistingPath -Path $packagePath -BoundaryName "EveJS package metadata" | Out-Null
+    if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
+        throw "Required EveJS package metadata is missing: $packagePath"
+    }
+    $package = [IO.File]::ReadAllText($packagePath, [Text.Encoding]::UTF8) | ConvertFrom-Json
+    $packageProperties = @($package.PSObject.Properties.Name)
+    $version = if ($packageProperties -contains "version") { ([string]$package.version).Trim() } else { "" }
+    if ($packageProperties -notcontains "name" -or
+        -not ([string]$package.name).Equals("eve.js", [StringComparison]::Ordinal) -or
+        [string]::IsNullOrWhiteSpace($version) -or
+        $version.Length -gt 64 -or
+        $version -notmatch '^[0-9A-Za-z][0-9A-Za-z._+-]*$' -or
+        $version.Contains("..")) {
+        throw "The selected EveJS root must contain package name eve.js and a non-empty, sane version string."
+    }
+
+    $configPath = Join-Path $normalizedRoot "tools\ClientSETUP\scripts\EvEJSConfig.bat"
+    Assert-NoReparsePointsInExistingPath -Path $configPath -BoundaryName "EveJS configuration" | Out-Null
+    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+        throw "Required EveJS client configuration is missing: $configPath"
+    }
+    $configText = [IO.File]::ReadAllText($configPath)
+    foreach ($requiredSetting in @("EVEJS_CLIENT_PATH", "EVEJS_CLIENT_EXE")) {
+        $matches = @(Get-LiteralBatchSettingMatches -Text $configText -Name $requiredSetting)
+        $candidateCount = Get-LiteralBatchSettingCandidateCount -Text $configText -Name $requiredSetting
+        if ($matches.Count -ne 1 -or $candidateCount -ne 1) {
+            throw "EvEJSConfig.bat must contain exactly one unambiguous literal $requiredSetting assignment."
+        }
+        $settingValue = Get-LiteralBatchSettingValue -Match $matches[0]
+        if ($requiredSetting -eq "EVEJS_CLIENT_PATH" -and [string]::IsNullOrWhiteSpace($settingValue)) {
+            throw "EvEJSConfig.bat EVEJS_CLIENT_PATH must not be empty."
+        }
+        if ($requiredSetting -eq "EVEJS_CLIENT_EXE" -and
+            -not [string]::IsNullOrWhiteSpace($settingValue) -and
+            -not $settingValue.Equals("bin64\exefile.exe", [StringComparison]::OrdinalIgnoreCase)) {
+            throw "EvEJSConfig.bat EVEJS_CLIENT_EXE must be empty or bin64\exefile.exe."
+        }
+    }
+    foreach ($managedSetting in @("TRINITYPLATFORM", "EVEJS_DLSS5")) {
+        $matches = @(Get-LiteralBatchSettingMatches -Text $configText -Name $managedSetting)
+        $candidateCount = Get-LiteralBatchSettingCandidateCount -Text $configText -Name $managedSetting
+        if ($matches.Count -ne $candidateCount) {
+            throw "EvEJSConfig.bat contains an ambiguous $managedSetting assignment that cannot be normalized safely."
+        }
+    }
+
+    return [pscustomobject][ordered]@{
+        root = $normalizedRoot
+        version = $version
+        configPath = $configPath
+    }
+}
+
 function Assert-WorkspaceLayout {
     Assert-PathInsideAuthorizedRoots -Path $script:StateRoot | Out-Null
     Assert-PathInsideRoot -Path $script:EveJSRoot -Root $script:WorkspaceRoot -BoundaryName "EveJS workspace" | Out-Null
     Assert-PathInsideRoot -Path $script:ClientRoot -Root $script:ClientRoot -BoundaryName "client" | Out-Null
     Assert-PathInsideRoot -Path $script:ConfigPath -Root $script:EveJSRoot -BoundaryName "EveJS root" | Out-Null
     Assert-PathInsideRoot -Path $script:PayloadRoot -Root $script:StateRoot -BoundaryName "DLSS5 state" | Out-Null
+    Assert-OwnedEveJSPath -Path $script:ConfigPath | Out-Null
+    foreach ($ownedClientPath in @(
+        $script:ClientRoot,
+        $script:BinRoot,
+        $script:ExePath,
+        (Join-Path $script:ClientRoot "start.ini"),
+        (Join-Path $script:BinRoot "blue.dll"),
+        (Join-Path $script:BinRoot "_trinity_dx12.dll"),
+        $script:ReShadeConfigPath,
+        $script:ReShadeLogPath,
+        (Join-Path $script:BinRoot "ReShadePreset.ini")
+    )) {
+        Assert-OwnedClientPath -Path $ownedClientPath | Out-Null
+    }
 
     foreach ($required in @(
         $script:EveJSRoot,
@@ -1310,10 +1593,13 @@ function Assert-WorkspaceLayout {
         throw "The EveJS root, target client, or bin64 folder is a reparse point. Refusing an ambiguous write boundary."
     }
 
-    $package = [IO.File]::ReadAllText((Join-Path $script:EveJSRoot "package.json"), [Text.Encoding]::UTF8) | ConvertFrom-Json
-    if (-not ([string]$package.name).Equals('eve.js', [StringComparison]::Ordinal) -or
-        [string]$package.version -notin @('0.12.6', '0.12.7')) {
-        throw 'The selected EveJS root must be an eve.js 0.12.6 or 0.12.7 installation.'
+    $evejsContract = Assert-EveJSRootContract -Root $script:EveJSRoot
+    if (-not (Get-NormalizedPath ([string]$evejsContract.configPath)).Equals((Get-NormalizedPath $script:ConfigPath), [StringComparison]::OrdinalIgnoreCase)) {
+        throw "The selected EveJS configuration path does not match the expected layout."
+    }
+    $physicalStateRoot = Get-NormalizedPath (Join-Path (Split-Path -Parent (Get-PhysicalPath $script:ClientRoot)) "_evejs\dlss5\install")
+    if (-not (Get-NormalizedPath $script:StateRoot).Equals($physicalStateRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "DLSS5 mutable state must be client-scoped at '$physicalStateRoot'."
     }
 
     $startIni = Get-Content -LiteralPath (Join-Path $script:ClientRoot "start.ini") -Raw
@@ -1376,12 +1662,12 @@ function New-ClientBaseline {
         })
     }
     $baseline = [ordered]@{
-        schemaVersion = 4
+        schemaVersion = 5
+        stateScope = "client"
         createdAtUtc = [DateTime]::UtcNow.ToString("o")
         workspaceRoot = $script:WorkspaceRoot
         evejsRoot = $script:EveJSRoot
         clientRoot = $script:ClientRoot
-        stateDirectory = $script:StateDirectory
         stateRoot = $script:StateRoot
         fileCount = $entries.Count
         files = $entries.ToArray()
@@ -1395,35 +1681,42 @@ function Get-UpdatedEveJSConfigText {
     $lines = [IO.File]::ReadAllLines($script:ConfigPath)
     $output = New-Object System.Collections.Generic.List[string]
     $foundClientPath = $false
+    $foundClientExe = $false
     $insertedDlssBlock = $false
 
     foreach ($line in $lines) {
-        if ($line -match '^\s*set\s+"EVEJS_CLIENT_PATH=') {
+        if (@(Get-LiteralBatchSettingMatches -Text $line -Name "EVEJS_CLIENT_PATH").Count -eq 1) {
             $output.Add('set "EVEJS_CLIENT_PATH=' + $script:ClientRoot + '"')
             $foundClientPath = $true
             continue
         }
-        if ($line -match '^\s*set\s+"(?:TRINITYPLATFORM|EVEJS_DLSS5)=') {
+        if (@(Get-LiteralBatchSettingMatches -Text $line -Name "TRINITYPLATFORM").Count -eq 1 -or
+            @(Get-LiteralBatchSettingMatches -Text $line -Name "EVEJS_DLSS5").Count -eq 1) {
             continue
         }
         if ($line -eq 'rem DLSS5 integration: force the DX12 Trinity renderer required by RenoDX.') {
             continue
         }
 
-        $output.Add($line)
-        if ($line -match '^\s*set\s+"EVEJS_CLIENT_EXE=' -and -not $insertedDlssBlock) {
+        $clientExeMatches = @(Get-LiteralBatchSettingMatches -Text $line -Name "EVEJS_CLIENT_EXE")
+        if ($clientExeMatches.Count -eq 1) {
+            $output.Add('set "EVEJS_CLIENT_EXE=bin64\exefile.exe"')
+            $foundClientExe = $true
             $output.Add('')
             $output.Add('rem DLSS5 integration: force the DX12 Trinity renderer required by RenoDX.')
             $output.Add('set "TRINITYPLATFORM=dx12"')
             $output.Add('set "EVEJS_DLSS5=on"')
             $insertedDlssBlock = $true
+            continue
         }
+
+        $output.Add($line)
     }
 
     if (-not $foundClientPath) {
         throw "EVEJS_CLIENT_PATH was not found in $script:ConfigPath"
     }
-    if (-not $insertedDlssBlock) {
+    if (-not $foundClientExe -or -not $insertedDlssBlock) {
         throw "EVEJS_CLIENT_EXE was not found in $script:ConfigPath"
     }
     return (($output -join "`r`n").TrimEnd([char[]]@("`r", "`n")) + "`r`n")
@@ -1437,10 +1730,9 @@ function New-InstallManifest {
     )
     $operations = New-Object System.Collections.Generic.List[object]
     foreach ($file in @($PayloadManifest.files)) {
-        $source = Join-Path $script:PayloadRoot $file.source
-        $destination = Join-Path $script:ClientRoot $file.destination
+        $source = Assert-ClientScopedStatePath -Path (Join-Path $script:PayloadRoot ([string]$file.source))
+        $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$file.destination))
         Assert-PathInsideRoot -Path $source -Root $script:PayloadRoot -BoundaryName "materialized payload" | Out-Null
-        Assert-PathInsideRoot -Path $destination -Root $script:ClientRoot -BoundaryName "client" | Out-Null
         $exists = Test-Path -LiteralPath $destination -PathType Leaf
         $kind = if ($exists) { "replace" } else { "add" }
         $originalHash = if ($exists) { Get-Sha256 $destination } else { $null }
@@ -1464,7 +1756,8 @@ function New-InstallManifest {
     }
 
     return [pscustomobject][ordered]@{
-        schemaVersion = 4
+        schemaVersion = 5
+        stateScope = "client"
         integrationVersion = [string]$PayloadManifest.integrationVersion
         status = "prepared"
         profile = $ProfileName
@@ -1476,7 +1769,6 @@ function New-InstallManifest {
         workspaceRoot = $script:WorkspaceRoot
         evejsRoot = $script:EveJSRoot
         clientRoot = $script:ClientRoot
-        stateDirectory = $script:StateDirectory
         stateRoot = $script:StateRoot
         backupDirectory = Join-Path "backups" $BackupName
         executable = [ordered]@{
@@ -1503,7 +1795,7 @@ function Get-BackupRoot {
     } else {
         Join-Path $script:IntegrationRoot ([string]$Manifest.backupDirectory)
     }
-    return (Assert-PathInsideRoot -Path $path -Root $script:StateRoot -BoundaryName "state")
+    return (Assert-ClientScopedStatePath -Path $path)
 }
 
 function Backup-InstallTargets {
@@ -1513,22 +1805,24 @@ function Backup-InstallTargets {
         throw "Backup directory already exists: $backupRoot"
     }
     New-Item -ItemType Directory -Path $backupRoot | Out-Null
+    Assert-ClientScopedStatePath -Path $backupRoot | Out-Null
 
     foreach ($operation in @($Manifest.operations)) {
         if ($operation.kind -ne "replace") { continue }
         $source = Join-Path $script:ClientRoot ([string]$operation.destination)
-        $backup = Join-Path $backupRoot ([string]$operation.backup)
-        $parent = Split-Path -Parent $backup
+        $backup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$operation.backup))
+        $parent = Assert-ClientScopedStatePath -Path (Split-Path -Parent $backup)
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
-        Copy-Item -LiteralPath $source -Destination $backup
+        Copy-FileAtomic -Source $source -Destination $backup -ExpectedSha256 ([string]$operation.originalSha256)
         if ((Get-Sha256 $backup) -ne [string]$operation.originalSha256) {
             throw "Backup verification failed for $($operation.destination)"
         }
     }
 
-    $configBackup = Join-Path $backupRoot ([string]$Manifest.config.backup)
-    New-Item -ItemType Directory -Path (Split-Path -Parent $configBackup) -Force | Out-Null
-    Copy-Item -LiteralPath $script:ConfigPath -Destination $configBackup
+    $configBackup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$Manifest.config.backup))
+    $configBackupParent = Assert-ClientScopedStatePath -Path (Split-Path -Parent $configBackup)
+    New-Item -ItemType Directory -Path $configBackupParent -Force | Out-Null
+    Copy-FileAtomic -Source $script:ConfigPath -Destination $configBackup -ExpectedSha256 ([string]$Manifest.config.originalSha256)
     if ((Get-Sha256 $configBackup) -ne [string]$Manifest.config.originalSha256) {
         throw "Backup verification failed for EvEJSConfig.bat"
     }
@@ -1541,9 +1835,9 @@ function Invoke-RecoveryRollback {
     param([Parameter(Mandatory = $true)]$Manifest)
     $backupRoot = Get-BackupRoot $Manifest
     foreach ($operation in @($Manifest.operations)) {
-        $destination = Join-Path $script:ClientRoot ([string]$operation.destination)
+        $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
         if ($operation.kind -eq "replace") {
-            $backup = Join-Path $backupRoot ([string]$operation.backup)
+            $backup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$operation.backup))
             if (Test-Path -LiteralPath $backup -PathType Leaf) {
                 Copy-FileAtomic -Source $backup -Destination $destination -ExpectedSha256 ([string]$operation.originalSha256)
             }
@@ -1555,11 +1849,66 @@ function Invoke-RecoveryRollback {
         }
     }
 
-    $configBackup = Join-Path $backupRoot ([string]$Manifest.config.backup)
+    $configBackup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$Manifest.config.backup))
     if (Test-Path -LiteralPath $configBackup -PathType Leaf) {
         Copy-FileAtomic -Source $configBackup -Destination $script:ConfigPath -ExpectedSha256 ([string]$Manifest.config.originalSha256)
     }
     Restore-ReShadeConfig -Manifest $Manifest
+}
+
+function Assert-RecoveryRollbackComplete {
+    param([Parameter(Mandatory = $true)]$Manifest)
+
+    foreach ($operation in @($Manifest.operations)) {
+        $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
+        if ($operation.kind -eq "replace") {
+            if (-not (Test-Path -LiteralPath $destination -PathType Leaf) -or
+                (Get-Sha256 $destination) -ne [string]$operation.originalSha256) {
+                throw "Rollback verification failed for replaced file: $($operation.destination)"
+            }
+        } elseif (Test-Path -LiteralPath $destination -PathType Leaf) {
+            throw "Rollback verification found an installer-added file: $($operation.destination)"
+        }
+    }
+
+    $exeHash = Get-Sha256 $script:ExePath
+    if ($exeHash -ne [string]$Manifest.executable.sha256 -or $exeHash -ne $script:ExpectedExeSha256) {
+        throw "Rollback verification found an unexpected exefile.exe hash."
+    }
+    if (-not (Test-Path -LiteralPath $script:ConfigPath -PathType Leaf) -or
+        (Get-Sha256 $script:ConfigPath) -ne [string]$Manifest.config.originalSha256) {
+        throw "Rollback verification found an unrestored EvEJSConfig.bat."
+    }
+
+    if ($Manifest.PSObject.Properties.Name -contains "reshadeConfig" -and $null -ne $Manifest.reshadeConfig) {
+        $configExists = Test-Path -LiteralPath $script:ReShadeConfigPath -PathType Leaf
+        if (-not [bool]$Manifest.reshadeConfig.originalExists -and $configExists) {
+            throw "Rollback verification found a generated ReShade.ini."
+        }
+        if ([bool]$Manifest.reshadeConfig.originalExists) {
+            if (-not $configExists) {
+                throw "Rollback verification found the pre-existing ReShade.ini missing."
+            }
+            $backup = Assert-ClientScopedStatePath -Path (Join-Path (Get-BackupRoot $Manifest) ([string]$Manifest.reshadeConfig.backup))
+            if (-not (Test-Path -LiteralPath $backup -PathType Leaf) -or
+                (Get-Sha256 $backup) -ne [string]$Manifest.reshadeConfig.originalSha256) {
+                throw "Rollback verification found an invalid ReShade.ini backup."
+            }
+            $currentSection = Get-IniSectionText -Text ([IO.File]::ReadAllText($script:ReShadeConfigPath)) -Section "RenoDX.DLSS5"
+            $originalSection = Get-IniSectionText -Text ([IO.File]::ReadAllText($backup)) -Section "RenoDX.DLSS5"
+            if (-not $currentSection.Equals($originalSection, [StringComparison]::Ordinal)) {
+                throw "Rollback verification found an unrestored RenoDX ReShade.ini section."
+            }
+        }
+    }
+
+    foreach ($relativePath in @("bin64\ReShade.log", "bin64\ReShadePreset.ini")) {
+        $artifactPath = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot $relativePath)
+        if ((Test-FileAbsentFromBaseline -RelativePath $relativePath) -and
+            (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
+            throw "Rollback verification found a generated ReShade artifact: $relativePath"
+        }
+    }
 }
 
 function Invoke-Preflight {
@@ -1567,7 +1916,7 @@ function Invoke-Preflight {
     Assert-WorkspaceLayout
     $payload = Assert-Payload
     foreach ($file in @($payload.files)) {
-        $destination = Join-Path $script:ClientRoot ([string]$file.destination)
+        $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$file.destination))
         Assert-RequiredOriginalTarget -File $file -Destination $destination
     }
 
@@ -1597,7 +1946,7 @@ function Invoke-Preflight {
     Write-Host ""
     Write-Host "  Planned client changes for '$Profile':" -ForegroundColor White
     foreach ($file in $enabledFiles) {
-        $target = Join-Path $script:ClientRoot $file.destination
+        $target = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$file.destination))
         $verb = if (Test-Path -LiteralPath $target -PathType Leaf) { "replace" } else { "add" }
         $old = if (Test-Path -LiteralPath $target -PathType Leaf) { (Get-Item -LiteralPath $target).VersionInfo.FileVersion } else { "-" }
         Write-Host ("    {0,-7} {1,-38} {2,-14} -> {3}" -f $verb, $file.destination, $old, $file.version)
@@ -1605,7 +1954,33 @@ function Invoke-Preflight {
     return $payload
 }
 
+function Assert-NoInstalledLegacyRootLocalJournal {
+    $legacyStateRoot = Get-NormalizedPath (Join-Path $script:EveJSRoot "_local\dlss5\install")
+    if ($legacyStateRoot.Equals((Get-NormalizedPath $script:StateRoot), [StringComparison]::OrdinalIgnoreCase)) {
+        return
+    }
+    $legacyManifestPath = Join-Path $legacyStateRoot "active-install.json"
+    if (-not (Test-Path -LiteralPath $legacyManifestPath -PathType Leaf)) { return }
+
+    $legacyItem = Get-Item -LiteralPath $legacyManifestPath -Force
+    if ($legacyItem.Attributes -band [IO.FileAttributes]::ReparsePoint -or
+        [Int64]$legacyItem.Length -lt 2 -or [Int64]$legacyItem.Length -gt 1048576) {
+        throw "A legacy root-local DLSS5 journal exists but cannot be safely inspected: $legacyManifestPath"
+    }
+    try {
+        $legacy = [IO.File]::ReadAllText($legacyManifestPath, [Text.Encoding]::UTF8) | ConvertFrom-Json
+    } catch {
+        throw "A legacy root-local DLSS5 journal exists but is invalid. Restore or repair it with its original package before installing 0.5.6: $legacyManifestPath"
+    }
+    $legacyStatus = if ($legacy.PSObject.Properties.Name -contains "status") { [string]$legacy.status } else { "unknown" }
+    if ($legacyStatus -notin @("restored", "rolledBack")) {
+        throw "Legacy root-local DLSS5 state is '$legacyStatus' at $legacyManifestPath. Version 0.5.6 will not copy or relabel that receipt. Restore it with the original package first."
+    }
+}
+
 function Invoke-Install {
+    Assert-NoTargetClientProcess
+    Assert-NoInstalledLegacyRootLocalJournal
     $existing = Read-ActiveManifest
     if ($null -ne $existing) {
         if ($existing.status -eq "installed") {
@@ -1614,10 +1989,15 @@ function Invoke-Install {
         if ($existing.status -notin @("restored", "rolledBack")) {
             throw "An incomplete install journal exists with status '$($existing.status)'. Run -Action Restore first."
         }
-        $history = Join-Path $script:StateRoot "history"
+        $history = Assert-ClientScopedStatePath -Path (Join-Path $script:StateRoot "history")
         New-Item -ItemType Directory -Path $history -Force | Out-Null
         $archiveName = "active-install-" + [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssfffZ") + ".json"
-        Move-Item -LiteralPath $script:ActiveManifestPath -Destination (Join-Path $history $archiveName)
+        $archivePath = Assert-ClientScopedStatePath -Path (Join-Path $history $archiveName)
+        $activeManifestPath = Assert-ClientScopedStatePath -Path $script:ActiveManifestPath
+        if (Test-Path -LiteralPath $archivePath) {
+            throw "Install history destination already exists: $archivePath"
+        }
+        Move-Item -LiteralPath $activeManifestPath -Destination $archivePath
     }
 
     $payload = Invoke-Preflight
@@ -1640,8 +2020,8 @@ function Invoke-Install {
         foreach ($operation in @($manifest.operations)) {
             $enabled = Test-ComponentEnabled -ProfileName $Profile -Component ([string]$operation.component)
             if (-not $enabled) { continue }
-            $source = Join-Path $script:PayloadRoot ([string]$operation.source)
-            $destination = Join-Path $script:ClientRoot ([string]$operation.destination)
+            $source = Assert-ClientScopedStatePath -Path (Join-Path $script:PayloadRoot ([string]$operation.source))
+            $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
             Copy-FileAtomic -Source $source -Destination $destination -ExpectedSha256 ([string]$operation.installedSha256)
             $operation.applied = $true
             Write-JsonAtomic -Value $manifest -Path $script:ActiveManifestPath
@@ -1666,11 +2046,16 @@ function Invoke-Install {
             reason = "initial install"
         })
         Write-JsonAtomic -Value $manifest -Path $script:ActiveManifestPath
+        Invoke-Verify -PayloadManifest $payload
     } catch {
         $failure = $_.Exception.Message
         Write-WarningLine "install failed; restoring the verified originals"
         try {
+            $manifest.status = "rollbackPending"
+            Write-JsonAtomic -Value $manifest -Path $script:ActiveManifestPath
             Invoke-RecoveryRollback -Manifest $manifest
+            Assert-RestoreBackups -Manifest $manifest
+            Assert-RecoveryRollbackComplete -Manifest $manifest
             $manifest.status = "rolledBack"
             Write-JsonAtomic -Value $manifest -Path $script:ActiveManifestPath
         } catch {
@@ -1680,12 +2065,209 @@ function Invoke-Install {
         throw "Install failed and was rolled back: $failure"
     }
 
-    Invoke-Verify -PayloadManifest $payload
     Write-Host ""
     Write-Host "DLSS5 integration installed. Runtime activation still requires an in-game smoke test." -ForegroundColor Green
 }
 
+function Set-EveJSRootContext {
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $script:EveJSRoot = Get-NormalizedPath $Root
+    $script:ConfigPath = Join-Path $script:EveJSRoot "tools\ClientSETUP\scripts\EvEJSConfig.bat"
+}
+
+function Assert-RestoreBackups {
+    param([Parameter(Mandatory = $true)]$Manifest)
+
+    $backupRoot = Get-BackupRoot $Manifest
+    if (-not (Test-Path -LiteralPath $backupRoot -PathType Container)) {
+        throw "Verified backup directory is missing: $backupRoot"
+    }
+    foreach ($operation in @($Manifest.operations)) {
+        if ($operation.kind -ne "replace") { continue }
+        $backup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$operation.backup))
+        if (-not (Test-Path -LiteralPath $backup -PathType Leaf)) {
+            throw "Backup file is missing: $backup"
+        }
+        if ((Get-Sha256 $backup) -ne [string]$operation.originalSha256) {
+            throw "Backup hash mismatch: $backup"
+        }
+        if ($operation.PSObject.Properties.Name -contains "originalBytes" -and
+            $null -ne $operation.originalBytes -and
+            [Int64](Get-Item -LiteralPath $backup).Length -ne [Int64]$operation.originalBytes) {
+            throw "Backup byte count mismatch: $backup"
+        }
+    }
+
+    $configBackup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$Manifest.config.backup))
+    if (-not (Test-Path -LiteralPath $configBackup -PathType Leaf) -or
+        (Get-Sha256 $configBackup) -ne [string]$Manifest.config.originalSha256) {
+        throw "Config backup is missing or has the wrong hash: $configBackup"
+    }
+    if ($Manifest.PSObject.Properties.Name -contains "reshadeConfig" -and
+        $null -ne $Manifest.reshadeConfig -and [bool]$Manifest.reshadeConfig.originalExists) {
+        $reshadeBackup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$Manifest.reshadeConfig.backup))
+        if (-not (Test-Path -LiteralPath $reshadeBackup -PathType Leaf) -or
+            (Get-Sha256 $reshadeBackup) -ne [string]$Manifest.reshadeConfig.originalSha256) {
+            throw "ReShade.ini backup is missing or has the wrong hash: $reshadeBackup"
+        }
+    }
+    Write-Okay "every rollback backup for the active root is present and hash-verified"
+}
+
+function Move-TerminalRootStateToHistory {
+    param([Parameter(Mandatory = $true)]$TerminalManifest)
+
+    if ([string]$TerminalManifest.status -notin @("restored", "rolledBack")) {
+        throw "Only a fully rolled-back receipt may be archived for root handoff."
+    }
+    $historyRoot = Assert-ClientScopedStatePath -Path (Join-Path $script:StateRoot "history")
+    New-Item -ItemType Directory -Path $historyRoot -Force | Out-Null
+    $stamp = [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssfffZ")
+    $manifestArchive = Assert-ClientScopedStatePath -Path (Join-Path $historyRoot ("active-install-before-root-handoff-" + $stamp + ".json"))
+    $baselineArchive = Assert-ClientScopedStatePath -Path (Join-Path $historyRoot ("baseline-before-root-handoff-" + $stamp + ".json"))
+    $activeManifestPath = Assert-ClientScopedStatePath -Path $script:ActiveManifestPath
+    $baselinePath = Assert-ClientScopedStatePath -Path $script:BaselinePath
+    if ((Test-Path -LiteralPath $manifestArchive) -or (Test-Path -LiteralPath $baselineArchive)) {
+        throw "Root-handoff history destination already exists."
+    }
+    if (-not (Test-Path -LiteralPath $baselinePath -PathType Leaf)) {
+        throw "The verified old-root baseline disappeared before archival."
+    }
+
+    Move-Item -LiteralPath $baselinePath -Destination $baselineArchive
+    try {
+        Move-Item -LiteralPath $activeManifestPath -Destination $manifestArchive
+    } catch {
+        Move-Item -LiteralPath $baselineArchive -Destination $baselinePath -ErrorAction SilentlyContinue
+        throw
+    }
+    Write-Okay "archived the rolled-back old-root receipt unchanged: $manifestArchive"
+    Write-Okay "archived the old-root client baseline: $baselineArchive"
+}
+
+function Invoke-ClientScopedRootHandoff {
+    param([Parameter(Mandatory = $true)]$CandidateManifest)
+
+    Assert-NoTargetClientProcess
+    Assert-WorkspaceLayout
+    $payload = Read-PayloadManifest
+
+    if (-not ($CandidateManifest.PSObject.Properties.Name -contains "schemaVersion") -or
+        [int]$CandidateManifest.schemaVersion -ne 5 -or
+        -not ($CandidateManifest.PSObject.Properties.Name -contains "stateScope") -or
+        -not ([string]$CandidateManifest.stateScope).Equals("client", [StringComparison]::Ordinal) -or
+        [string]$CandidateManifest.status -notin @("installed", "restored", "rolledBack")) {
+        throw "Automatic root handoff requires an installed or fully rolled-back schema-5 client-scoped receipt."
+    }
+
+    foreach ($requiredPathProperty in @("workspaceRoot", "evejsRoot", "clientRoot", "stateRoot")) {
+        if ($CandidateManifest.PSObject.Properties.Name -notcontains $requiredPathProperty -or
+            [string]::IsNullOrWhiteSpace([string]$CandidateManifest.$requiredPathProperty) -or
+            -not [IO.Path]::IsPathRooted([string]$CandidateManifest.$requiredPathProperty)) {
+            throw "The client-scoped receipt has no unambiguous $requiredPathProperty path."
+        }
+    }
+    if (-not ($CandidateManifest.PSObject.Properties.Name -contains "config") -or
+        $null -eq $CandidateManifest.config -or
+        $CandidateManifest.config.PSObject.Properties.Name -notcontains "path" -or
+        [string]::IsNullOrWhiteSpace([string]$CandidateManifest.config.path) -or
+        -not [IO.Path]::IsPathRooted([string]$CandidateManifest.config.path)) {
+        throw "The client-scoped receipt has no unambiguous EveJS configuration path."
+    }
+
+    $targetRoot = Get-NormalizedPath $script:EveJSRoot
+    $targetWorkspace = Get-NormalizedPath $script:WorkspaceRoot
+    $oldRoot = Get-NormalizedPath ([string]$CandidateManifest.evejsRoot)
+    $oldWorkspace = Get-NormalizedPath ([string]$CandidateManifest.workspaceRoot)
+    $recordedClient = Get-NormalizedPath ([string]$CandidateManifest.clientRoot)
+    $recordedState = Get-NormalizedPath ([string]$CandidateManifest.stateRoot)
+    $targetParent = Get-NormalizedPath (Split-Path -Parent $targetRoot)
+    $oldParent = Get-NormalizedPath (Split-Path -Parent $oldRoot)
+
+    if ($oldRoot.Equals($targetRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Root handoff was requested for the same EveJS root."
+    }
+    if (-not $targetParent.Equals($oldParent, [StringComparison]::OrdinalIgnoreCase) -or
+        -not $targetWorkspace.Equals($targetParent, [StringComparison]::OrdinalIgnoreCase) -or
+        -not $oldWorkspace.Equals($oldParent, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Automatic DLSS5 handoff is allowed only between different immediate sibling EveJS roots."
+    }
+    if (-not $recordedClient.Equals((Get-NormalizedPath $script:ClientRoot), [StringComparison]::OrdinalIgnoreCase) -or
+        -not $recordedState.Equals((Get-NormalizedPath $script:StateRoot), [StringComparison]::OrdinalIgnoreCase)) {
+        throw "The installed receipt belongs to a different client or state root; automatic handoff is forbidden."
+    }
+
+    $oldContract = Assert-EveJSRootContract -Root $oldRoot
+    if (-not (Get-NormalizedPath ([string]$CandidateManifest.config.path)).Equals((Get-NormalizedPath ([string]$oldContract.configPath)), [StringComparison]::OrdinalIgnoreCase)) {
+        throw "The installed receipt's configuration path is not inside the recorded old EveJS root."
+    }
+
+    Write-Step "Handing the shared client from '$oldRoot' to '$targetRoot'"
+    try {
+        Set-EveJSRootContext -Root $oldRoot
+        Assert-WorkspaceLayout
+        $installed = Read-ActiveManifest
+        if (-not (Test-ManifestMatchesPayloadMetadata -Manifest $installed -PayloadManifest $payload)) {
+            throw "The old-root receipt does not match the exact 0.5.6 payload metadata."
+        }
+        Invoke-Verify -PayloadManifest $payload
+        Assert-RestoreBackups -Manifest $installed
+        if ([string]$installed.status -eq "installed") {
+            Invoke-Restore
+        } else {
+            Write-Okay "the old-root receipt already proves a complete rollback; no client files were changed"
+        }
+    } finally {
+        Set-EveJSRootContext -Root $targetRoot
+    }
+
+    $terminal = Read-ActiveManifestRaw
+    if ($null -eq $terminal -or
+        [string]$terminal.status -notin @("restored", "rolledBack") -or
+        -not (Get-NormalizedPath ([string]$terminal.evejsRoot)).Equals($oldRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "The old-root receipt was not left in a fully rolled-back state; target installation was not attempted."
+    }
+    Move-TerminalRootStateToHistory -TerminalManifest $terminal
+
+    try {
+        Invoke-Install
+    } catch {
+        $targetFailure = $_.Exception.Message
+        $stockVerified = $false
+        $postFailureProblem = $null
+        try {
+            $failedTargetManifest = Read-ActiveManifest
+            if ($null -eq $failedTargetManifest) {
+                # Invoke-Install creates its journal before touching the client.
+                # No new journal therefore proves the target was rejected while
+                # the already-verified old-root rollback was still stock.
+                $stockVerified = $true
+            } elseif ([string]$failedTargetManifest.status -eq "rolledBack") {
+                Assert-RecoveryRollbackComplete -Manifest $failedTargetManifest
+                $stockVerified = $true
+            }
+        } catch {
+            $postFailureProblem = $_.Exception.Message
+        }
+        if ($stockVerified) {
+            throw "The old EveJS root was safely restored, but installing DLSS5 for the target root failed. The shared client is verified stock. $targetFailure"
+        }
+        $recoveryDetail = if ($postFailureProblem) { " Post-failure verification: $postFailureProblem" } else { "" }
+        throw "The old EveJS root was restored, but the target install did not reach a verified rollback. Do not launch the client; the client-scoped recovery journal was retained for explicit Restore.$recoveryDetail Target failure: $targetFailure"
+    }
+    Write-Okay "client-scoped root handoff completed with a fresh target-root receipt"
+}
+
 function Invoke-Ensure {
+    $candidate = Read-ActiveManifestRaw
+    if ($null -ne $candidate -and
+        $candidate.PSObject.Properties.Name -contains "evejsRoot" -and
+        $candidate.evejsRoot -and
+        -not (Get-NormalizedPath ([string]$candidate.evejsRoot)).Equals((Get-NormalizedPath $script:EveJSRoot), [StringComparison]::OrdinalIgnoreCase)) {
+        Invoke-ClientScopedRootHandoff -CandidateManifest $candidate
+        return
+    }
+
     $existing = Read-ActiveManifest
     if ($null -eq $existing -or $existing.status -in @("restored", "rolledBack")) {
         Invoke-Install
@@ -1797,7 +2379,7 @@ function Invoke-UpgradePayload {
 
         $operation = $matches[0]
         $component = [string]$file.component
-        $destination = Join-Path $script:ClientRoot ([string]$operation.destination)
+        $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
         $upgradeMode = Get-PayloadUpgradeMode `
             -Operation $operation `
             -File $file `
@@ -1826,11 +2408,15 @@ function Invoke-UpgradePayload {
         return
     }
 
-    $historyRoot = Join-Path $script:StateRoot "history"
+    $historyRoot = Assert-ClientScopedStatePath -Path (Join-Path $script:StateRoot "history")
     New-Item -ItemType Directory -Path $historyRoot -Force | Out-Null
     $archiveName = "active-install-before-payload-" + [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssfffZ") + ".json"
-    $archivePath = Join-Path $historyRoot $archiveName
-    Copy-Item -LiteralPath $script:ActiveManifestPath -Destination $archivePath
+    $archivePath = Assert-ClientScopedStatePath -Path (Join-Path $historyRoot $archiveName)
+    $activeManifestPath = Assert-ClientScopedStatePath -Path $script:ActiveManifestPath
+    if (Test-Path -LiteralPath $archivePath) {
+        throw "Payload history destination already exists: $archivePath"
+    }
+    Copy-Item -LiteralPath $activeManifestPath -Destination $archivePath
     $archiveHash = Get-Sha256 $archivePath
 
     $now = [DateTime]::UtcNow.ToString("o")
@@ -1904,7 +2490,7 @@ function Invoke-ApplyProfile {
     foreach ($operation in @($manifest.operations)) {
         $component = Get-OperationComponent -Operation $operation -PayloadManifest $payload
         Add-OrSetProperty -Object $operation -Name "component" -Value $component
-        $destination = Join-Path $script:ClientRoot ([string]$operation.destination)
+        $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
         if ($operation.kind -eq "replace") {
             if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) {
                 throw "Profile transition stopped: replaced file is missing: $($operation.destination)"
@@ -1913,7 +2499,7 @@ function Invoke-ApplyProfile {
             if ($currentHash -notin @([string]$operation.originalSha256, [string]$operation.installedSha256)) {
                 throw "Profile transition stopped on user drift: $($operation.destination)"
             }
-            $backup = Join-Path $backupRoot ([string]$operation.backup)
+            $backup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$operation.backup))
             if (-not (Test-Path -LiteralPath $backup -PathType Leaf) -or
                 (Get-Sha256 $backup) -ne [string]$operation.originalSha256) {
                 throw "Original backup is missing or invalid: $backup"
@@ -1939,9 +2525,9 @@ function Invoke-ApplyProfile {
     Write-Step "Applying component profile '$Profile'"
     foreach ($operation in @($manifest.operations)) {
         $enabled = Test-ComponentEnabled -ProfileName $Profile -Component ([string]$operation.component)
-        $destination = Join-Path $script:ClientRoot ([string]$operation.destination)
+        $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
         if ($enabled) {
-            $source = Join-Path $script:PayloadRoot ([string]$operation.source)
+            $source = Assert-ClientScopedStatePath -Path (Join-Path $script:PayloadRoot ([string]$operation.source))
             if (-not (Test-Path -LiteralPath $destination -PathType Leaf) -or
                 (Get-Sha256 $destination) -ne [string]$operation.installedSha256) {
                 Copy-FileAtomic -Source $source -Destination $destination -ExpectedSha256 ([string]$operation.installedSha256)
@@ -1950,7 +2536,7 @@ function Invoke-ApplyProfile {
             Add-OrSetProperty -Object $operation -Name "applied" -Value $true
         } elseif ($operation.kind -eq "replace") {
             if ((Get-Sha256 $destination) -ne [string]$operation.originalSha256) {
-                $backup = Join-Path $backupRoot ([string]$operation.backup)
+                $backup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$operation.backup))
                 Copy-FileAtomic -Source $backup -Destination $destination -ExpectedSha256 ([string]$operation.originalSha256)
                 Write-Okay "restored original $($operation.destination)"
             }
@@ -2010,7 +2596,7 @@ function Invoke-Verify {
     if ($manifest.status -in @("restored", "rolledBack")) {
         Write-Step "Verifying complete DLSS5 rollback"
         foreach ($operation in @($manifest.operations)) {
-            $destination = Join-Path $script:ClientRoot ([string]$operation.destination)
+            $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
             if ($operation.kind -eq "replace") {
                 if (-not (Test-Path -LiteralPath $destination -PathType Leaf) -or
                     (Get-Sha256 $destination) -ne [string]$operation.originalSha256) {
@@ -2036,7 +2622,7 @@ function Invoke-Verify {
             }
             if ([bool]$manifest.reshadeConfig.originalExists) {
                 if (-not $configExists) { throw "Pre-existing ReShade.ini is missing after rollback." }
-                $backup = Join-Path (Get-BackupRoot $manifest) ([string]$manifest.reshadeConfig.backup)
+                $backup = Assert-ClientScopedStatePath -Path (Join-Path (Get-BackupRoot $manifest) ([string]$manifest.reshadeConfig.backup))
                 $currentSection = Get-IniSectionText -Text ([IO.File]::ReadAllText($script:ReShadeConfigPath)) -Section "RenoDX.DLSS5"
                 $originalSection = Get-IniSectionText -Text ([IO.File]::ReadAllText($backup)) -Section "RenoDX.DLSS5"
                 if (-not $currentSection.Equals($originalSection, [StringComparison]::Ordinal)) {
@@ -2047,7 +2633,7 @@ function Invoke-Verify {
 
         foreach ($relativePath in @("bin64\ReShade.log", "bin64\ReShadePreset.ini")) {
             if ((Test-FileAbsentFromBaseline -RelativePath $relativePath) -and
-                (Test-Path -LiteralPath (Join-Path $script:ClientRoot $relativePath) -PathType Leaf)) {
+                (Test-Path -LiteralPath (Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot $relativePath)) -PathType Leaf)) {
                 throw "Generated ReShade artifact remains after rollback: $relativePath"
             }
         }
@@ -2070,7 +2656,7 @@ function Invoke-Verify {
         $component = Get-OperationComponent -Operation $operation -PayloadManifest $payload
         Add-OrSetProperty -Object $operation -Name "component" -Value $component
         $enabled = Test-ComponentEnabled -ProfileName $currentProfile -Component $component
-        $destination = Join-Path $script:ClientRoot ([string]$operation.destination)
+        $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
         if ($enabled) {
             $enabledCount++
             if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) {
@@ -2099,18 +2685,13 @@ function Invoke-Verify {
         throw "EvEJSConfig.bat changed after installation."
     }
     $configText = [IO.File]::ReadAllText($script:ConfigPath)
-    if (-not $configText.Contains('set "EVEJS_CLIENT_PATH=' + $script:ClientRoot + '"')) {
-        throw "EveJS is not wired to the isolated client copy."
-    }
-    if (-not $configText.Contains('set "TRINITYPLATFORM=dx12"')) {
-        throw "TRINITYPLATFORM=dx12 is not configured."
-    }
-    if (-not $configText.Contains('set "EVEJS_DLSS5=on"')) {
-        throw "The EVEJS_DLSS5 integration marker is missing."
-    }
+    Assert-ExactBatchSettingValue -Text $configText -Name "EVEJS_CLIENT_PATH" -ExpectedValue $script:ClientRoot
+    Assert-ExactBatchSettingValue -Text $configText -Name "EVEJS_CLIENT_EXE" -ExpectedValue "bin64\exefile.exe"
+    Assert-ExactBatchSettingValue -Text $configText -Name "TRINITYPLATFORM" -ExpectedValue "dx12"
+    Assert-ExactBatchSettingValue -Text $configText -Name "EVEJS_DLSS5" -ExpectedValue "on"
 
     if (Test-ComponentEnabled -ProfileName $currentProfile -Component "reshade") {
-        $reshade = Join-Path $script:BinRoot "dxgi.dll"
+        $reshade = Assert-OwnedClientPath -Path (Join-Path $script:BinRoot "dxgi.dll")
         if (-not (Test-AsciiMarker -Path $reshade -Marker "Searching for add-ons")) {
             throw "The installed dxgi.dll is not the ReShade Addon loader."
         }
@@ -2287,7 +2868,7 @@ function Test-RestoreDrift {
     )
     $problems = New-Object System.Collections.Generic.List[string]
     foreach ($operation in @($Manifest.operations)) {
-        $destination = Join-Path $script:ClientRoot ([string]$operation.destination)
+        $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
         if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) {
             if ($operation.kind -eq "replace") {
                 $problems.Add("missing replaced file: $($operation.destination)")
@@ -2331,39 +2912,23 @@ function Invoke-Restore {
         return
     }
 
+    Assert-RestoreBackups -Manifest $manifest
     $backupRoot = Get-BackupRoot $manifest
-    if (-not (Test-Path -LiteralPath $backupRoot -PathType Container)) {
-        throw "Verified backup directory is missing: $backupRoot"
-    }
-
-    foreach ($operation in @($manifest.operations)) {
-        if ($operation.kind -ne "replace") { continue }
-        $backup = Join-Path $backupRoot ([string]$operation.backup)
-        if (-not (Test-Path -LiteralPath $backup -PathType Leaf)) {
-            throw "Backup file is missing: $backup"
-        }
-        if ((Get-Sha256 $backup) -ne [string]$operation.originalSha256) {
-            throw "Backup hash mismatch: $backup"
-        }
-    }
-    $configBackup = Join-Path $backupRoot ([string]$manifest.config.backup)
-    if ((Get-Sha256 $configBackup) -ne [string]$manifest.config.originalSha256) {
-        throw "Config backup hash mismatch: $configBackup"
-    }
+    $configBackup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$manifest.config.backup))
 
     Test-RestoreDrift -Manifest $manifest -AllowDrift:$Force
     Write-Step "Restoring original EVE client files and EveJS configuration"
     $reverseOperations = @($manifest.operations)
     [Array]::Reverse($reverseOperations)
     foreach ($operation in $reverseOperations) {
-        $destination = Join-Path $script:ClientRoot ([string]$operation.destination)
+        $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
         if ($operation.kind -eq "add") {
             if (Test-Path -LiteralPath $destination -PathType Leaf) {
                 Remove-Item -LiteralPath $destination -Force
                 Write-Okay "removed $($operation.destination)"
             }
         } else {
-            $backup = Join-Path $backupRoot ([string]$operation.backup)
+            $backup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$operation.backup))
             Copy-FileAtomic -Source $backup -Destination $destination -ExpectedSha256 ([string]$operation.originalSha256)
             Write-Okay "restored $($operation.destination)"
         }

@@ -82,7 +82,7 @@ archive and the client's Python DLL before replacing the graphics-apply and
 device-startup methods in two stages, then verifies the exact accepted archive
 hash. Only those two archive entries change; every other entry stays byte-identical.
 
-The 0.5.5 source-only templates replace retained client implementation blocks
+The 0.5.6 source-only templates replace retained client implementation blocks
 and mixed expressions with local-data placeholders. Authored reconstruction
 helpers derive those statements from the user's pinned original code objects.
 Startup template lines 170 and 181 remain authored startup policy using matching

@@ -154,7 +154,7 @@ while ($pending.Count -gt 0) {
         }
         $relative = $item.FullName.Substring($script:SourceRoot.Length + 1)
         if ($item.Name -match '(?i)(swapper|^code\.ccp$|^nvngx.*\.dll$|^sl\..*\.dll$|^renodx.*\.(addon64|dll)$)' -or
-            ($item.PSIsContainer -and $item.Name -match '(?i)^(cache|caches|private-evidence|vendor|vendor-candidates|ResFiles|_local|state(?:-.*)?|backups?)$')) {
+            ($item.PSIsContainer -and $item.Name -match '(?i)^(cache|caches|private-evidence|vendor|vendor-candidates|ResFiles|_local|_evejs|state(?:-.*)?|backups?)$')) {
             throw "Forbidden downloaded payload, client archive, cache, or private evidence: $relative"
         }
         $testOnly = $relative.Equals('EveJS-Integration\tests', [StringComparison]::OrdinalIgnoreCase) -or
@@ -193,16 +193,23 @@ foreach ($relative in $shippingFiles) {
 }
 
 $descriptor = [IO.File]::ReadAllText((Get-SafePackagePath 'evejs-launcher.client-mod.json'), $utf8) | ConvertFrom-Json
-if ([int]$descriptor.schemaVersion -ne 2 -or $descriptor.id -ne 'evejs-dlss5' -or $descriptor.version -ne '0.5.5' -or
+if ([int]$descriptor.schemaVersion -ne 3 -or $descriptor.id -ne 'evejs-dlss5' -or $descriptor.version -ne '0.5.6' -or
     $descriptor.manager.path -cne 'EveJS-Integration/Manage-EveJSDLSS5.ps1') {
     throw 'Unexpected development package identity or manager path.'
+}
+$compatibilityNames = @($descriptor.compatibility.PSObject.Properties.Name | Sort-Object)
+if (($compatibilityNames -join ',') -cne 'clientBuild,evejsVersionPolicy,profile' -or
+    [string]$descriptor.compatibility.evejsVersionPolicy -cne 'any' -or
+    [int]$descriptor.compatibility.clientBuild -ne 3396210 -or
+    [string]$descriptor.compatibility.profile -cne 'DLSS5') {
+    throw 'Unexpected descriptor compatibility policy.'
 }
 Assert-Pin 'EveJS-Integration\Manage-EveJSDLSS5.ps1' ([string]$descriptor.manager.sha256)
 $managerText = [IO.File]::ReadAllText((Get-SafePackagePath 'EveJS-Integration\Manage-EveJSDLSS5.ps1'), $utf8)
 Assert-Pin 'EveJS-Integration\Public-Payload.ps1' (Get-ManagerPin $managerText 'ExpectedPublicPayloadHelperSha256')
 Assert-Pin 'EveJS-Integration\payload-manifest.json' (Get-ManagerPin $managerText 'ExpectedPayloadManifestSha256')
 $manifest = [IO.File]::ReadAllText((Get-SafePackagePath 'EveJS-Integration\payload-manifest.json'), $utf8) | ConvertFrom-Json
-if ([int]$manifest.schemaVersion -ne 5 -or $manifest.integrationVersion -ne '0.5.5' -or $manifest.generator.id -cne 'evejs-code-ccp-v12-local-source-v1') { throw 'Unexpected payload manifest identity.' }
+if ([int]$manifest.schemaVersion -ne 5 -or $manifest.integrationVersion -ne '0.5.6' -or $manifest.generator.id -cne 'evejs-code-ccp-v12-local-source-v1') { throw 'Unexpected payload manifest identity.' }
 $bundled = @($manifest.files | Where-Object { $_.sourceKind -eq 'bundled' })
 if ($bundled.Count -ne 1 -or $bundled[0].id -ne 'reshade-evejs' -or $bundled[0].packagePath -cne 'payload\reshade\ReShade64.dll') {
     throw 'Only the reviewed ReShade binary may be bundled.'
@@ -234,7 +241,7 @@ $outputDirectory = Assert-PlainPath (Join-Path $PSScriptRoot 'candidate-output')
 if (Test-Path -LiteralPath $outputDirectory) {
     if (-not (Test-Path -LiteralPath $outputDirectory -PathType Container)) { throw 'candidate-output is not a directory.' }
 } else { New-Item -ItemType Directory -Path $outputDirectory | Out-Null }
-$candidateName = 'EveJS-DLSS5-0.5.5-RELEASE-CANDIDATE-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') + '-' + [Guid]::NewGuid().ToString('N') + '.zip'
+$candidateName = 'EveJS-DLSS5-0.5.6-RELEASE-CANDIDATE-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') + '-' + [Guid]::NewGuid().ToString('N') + '.zip'
 $candidatePath = Join-Path $outputDirectory $candidateName
 $partialPath = $candidatePath + '.partial'
 if ((Test-Path -LiteralPath $candidatePath) -or (Test-Path -LiteralPath $partialPath)) { throw 'Candidate already exists; nothing will be overwritten.' }

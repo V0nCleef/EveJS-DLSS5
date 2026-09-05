@@ -1,7 +1,7 @@
-# Release gates: DLSS5 0.5.5 + launcher 1.0.50
+# Release gates: DLSS5 0.5.6 + launcher 1.0.51
 
 Status: unpublished final-version source candidate. Neither final artifact is
-manually accepted. Prior 0.5.4 and 0.5.5-dev results are historical evidence,
+manually accepted. Prior 0.5.4, 0.5.5-dev and 0.5.5 results are historical evidence,
 not automatic acceptance of this pair.
 
 ## Exact source and artifact checks
@@ -11,7 +11,11 @@ not automatic acceptance of this pair.
 - [x] Add project LICENSE/LICENSING.md and the Microsoft header notice without
   changing bundled binaries or historical native source/provenance records.
 - [x] Retain native, downloaded-component, generated-archive and tool/template
-  bytes while changing the package identity from 0.5.5-dev to 0.5.5.
+  bytes while changing only installer ownership/state handling for 0.5.6.
+- [x] Store schema-5 mutable state at `<tq parent>\_evejs\dlss5\install`, reject
+  reparse-point state paths and leave schema-4 root-local receipts explicit.
+- [x] Fixture-test failed and successful sibling handoffs, terminal-receipt
+  transition, read-only Ensure and complete rollback without live client writes.
 - [ ] Independently review final manifest -> manager -> descriptor trust pins
   and the matching launcher allowlist/version map.
 - [ ] Run focused final-version metadata/installer regressions and confirm
@@ -25,7 +29,7 @@ not automatic acceptance of this pair.
 
 ## Manual acceptance
 
-- [ ] User tests the exact final 0.5.5 package and matching launcher 1.0.50.
+- [ ] User tests the exact final 0.5.6 package and matching launcher 1.0.51.
 - [ ] Record the actual settings/routes tested; do not infer an unperformed
   graphics matrix, hardware matrix or longer-session pass.
 - [ ] Retain standalone installation/uninstallation coverage as well as

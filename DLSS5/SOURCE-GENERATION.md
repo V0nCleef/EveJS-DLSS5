@@ -1,9 +1,11 @@
-# Local source generation - 0.5.5
+# Local source generation - 0.5.6
 
 This final-version candidate retains the exact source helpers, templates,
-runner, native DLL and generated V12 runtime of the prior 0.5.5-dev candidate.
+runner, native DLL and generated V12 runtime of the prior 0.5.5 release. Version
+0.5.6 changes install ownership and client-scoped state only; these payload bytes
+remain unchanged.
 Only release identity, trust pins and licensing/documentation are finalized.
-Neither final package nor matching launcher 1.0.50 is manually accepted yet.
+Neither final package nor matching launcher 1.0.51 is manually accepted yet.
 
 This packaging candidate replaces the two distributed adapted-client method
 bodies with source-only templates and a narrow, data-only Python 2.7 emitter.

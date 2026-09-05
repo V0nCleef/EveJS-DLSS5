@@ -99,7 +99,7 @@ function Assert-PublicPayloadManifestContract {
     if ([int]$Manifest.schemaVersion -ne 5) {
         throw "Unsupported public payload schemaVersion '$($Manifest.schemaVersion)'."
     }
-    if (-not ([string]$Manifest.integrationVersion).Equals('0.5.5', [StringComparison]::Ordinal)) {
+    if (-not ([string]$Manifest.integrationVersion).Equals('0.5.6', [StringComparison]::Ordinal)) {
         throw "Unsupported public integrationVersion '$($Manifest.integrationVersion)'."
     }
     if ([int]$Manifest.clientBuild -ne 3396210) {
@@ -457,7 +457,7 @@ function Get-VerifiedPublicArtifact {
             -Uri ([string]$Artifact.url) `
             -OutFile $staged `
             -TimeoutSec 900 `
-            -Headers @{ 'User-Agent' = 'EveJS-DLSS5/0.5.5' } | Out-Null
+            -Headers @{ 'User-Agent' = 'EveJS-DLSS5/0.5.6' } | Out-Null
         Assert-PublicFileRecord -Path $staged -Record $Artifact -Label "Downloaded artifact '$($Artifact.id)'" | Out-Null
         Move-StagedFileIntoPlace -StagedPath $staged -Destination $destination
     } finally {
