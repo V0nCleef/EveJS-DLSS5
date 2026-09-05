@@ -1,4 +1,4 @@
-# 0.5.7 - release candidate, not published
+# 0.5.7 - 2026-09-05
 
 - Fix second and later launcher starts after RenoDX or F6 persists
   `NeuralUplift=0` in `ReShade.ini`.

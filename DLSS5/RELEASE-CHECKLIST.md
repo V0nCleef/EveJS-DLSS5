@@ -1,8 +1,8 @@
 # Release gates: DLSS5 0.5.7 + launcher 1.0.52
 
-Status: unpublished hotfix source candidate. Neither final artifact is manually
-accepted. Prior 0.5.6/1.0.51 results are historical evidence, not automatic
-acceptance of this pair.
+Status: published hotfix pair, manually accepted on 2026-09-05. Prior
+0.5.6/1.0.51 results remain historical evidence rather than acceptance of this
+pair.
 
 ## Exact source and artifact checks
 
@@ -16,26 +16,38 @@ acceptance of this pair.
   reparse-point state paths and leave schema-4 root-local receipts explicit.
 - [x] Fixture-test failed and successful sibling handoffs, terminal-receipt
   transition, read-only Ensure and complete rollback without live client writes.
-- [ ] Independently review final manifest -> manager -> descriptor trust pins
+- [x] Independently review final manifest -> manager -> descriptor trust pins
   and the matching launcher allowlist/version map.
-- [ ] Run focused final-version metadata/installer regressions and confirm
+- [x] Run focused final-version metadata/installer regressions and confirm
   original-byte rollback, retained history and same-runtime version migration.
-- [ ] Verify the exact 38-file shipping inventory and complete ZIP member hashes.
+- [x] Verify the exact 38-file shipping inventory and complete ZIP member hashes.
   No tests, private paths, receipts, caches, original/reconstructed client source,
   PYC, client runtime DLL or downloaded NVIDIA/RenoDX payloads may ship.
-- [ ] Build the complete matching launcher onedir ZIP and independently verify
+- [x] Build the complete matching launcher onedir ZIP and independently verify
   source scope, retained old trust/uninstall support and non-DLSS behavior.
-- [ ] Record the exact final package/launcher hashes before manual handoff.
+- [x] Record the exact final package/launcher hashes before manual handoff.
 
 ## Manual acceptance
 
-- [ ] User tests the exact final 0.5.7 package and matching launcher 1.0.52.
-- [ ] Record the actual settings/routes tested; do not infer an unperformed
+- [x] User tests the exact final 0.5.7 package and matching launcher 1.0.52.
+- [x] Record the actual settings/routes tested; do not infer an unperformed
   graphics matrix, hardware matrix or longer-session pass.
-- [ ] Retain standalone installation/uninstallation coverage as well as
+- [x] Retain standalone installation/uninstallation coverage as well as
   launcher-mod detection, enabled state and its uninstall workflow.
-- [ ] Any later package or launcher change requires testing its new exact
+- [x] Any later package or launcher change requires testing its new exact
   artifact again, even if the emitted runtime bytes are identical.
+
+Accepted route: existing 0.5.6 client-scoped installation, package-only update
+to 0.5.7 under EveJS v0.12.7.1, Launcher 1.0.52, persisted
+`NeuralUplift=0`, and a successful repeat character launch after restarting the
+server stack. No broader graphics or hardware matrix is claimed.
+
+Accepted artifacts:
+
+- `EveJS-DLSS5-0.5.7.zip` — SHA-256
+  `B85DDAE6A32004BBD4B3A75C341314A19FAEE4C5381A5E17C3E80548187A3BE1`
+- `EveJS-Launcher-V1.zip` — SHA-256
+  `67D2D8FBC79F6FAA27851C57460CF6994B983289B8E9DBBB7D4546C303280473`
 
 The user controls all game/launcher UI. Agree test scope with the user; no
 automatic full matrix or screen control is authorized. Preserve accepted
@@ -65,7 +77,7 @@ recorded. They must not be mistaken for a current final-artifact acceptance log.
 
 ## Publication authorization
 
-- [ ] Freeze final docs, versions, trust pins and artifact hashes.
-- [ ] Record user acceptance of the exact final artifacts.
-- [ ] Obtain separate explicit approval before commit, tag, upload, publish
+- [x] Freeze final docs, versions, trust pins and artifact hashes.
+- [x] Record user acceptance of the exact final artifacts.
+- [x] Obtain separate explicit approval before commit, tag, upload, publish
   or release. A passing test alone does not authorize any of these actions.

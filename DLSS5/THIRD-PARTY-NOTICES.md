@@ -1,11 +1,11 @@
 # Component provenance and third-party notices
 
-Release-candidate inventory: 2026-09-04. This inventory is not a legal opinion
+Release inventory: 2026-09-05. This inventory is not a legal opinion
 or a third-party grant of rights. Original project contributions are MIT
 licensed under LICENSE, subject to LICENSING.md's scope and exclusions.
 No blanket MIT license is applied to third-party material. No permission
-requests have been sent to any author. The final artifacts are not yet
-manually accepted or approved for publication.
+requests have been sent to any author. Manual acceptance and publication of the
+0.5.7 artifact do not change those licensing boundaries.
 
 ## Modified ReShade - bundled
 

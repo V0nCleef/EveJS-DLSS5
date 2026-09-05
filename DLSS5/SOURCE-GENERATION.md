@@ -4,8 +4,8 @@ The 0.5.7 package retains the exact 0.5.6 payload manifest, source helpers,
 templates, runner, native DLL and generated V12 runtime. It changes only the
 manager's read-only validation of the documented `NeuralUplift` runtime Boolean.
 The client receipt therefore remains integration version 0.5.6 and no renderer
-payload migration is performed. Neither the 0.5.7 package nor matching launcher
-1.0.52 is manually accepted yet.
+payload migration is performed. The exact 0.5.7 package and matching launcher
+1.0.52 were manually accepted before publication on 2026-09-05.
 
 This packaging candidate replaces the two distributed adapted-client method
 bodies with source-only templates and a narrow, data-only Python 2.7 emitter.
