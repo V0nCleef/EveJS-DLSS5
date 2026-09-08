@@ -99,7 +99,7 @@ function Assert-PublicPayloadManifestContract {
     if ([int]$Manifest.schemaVersion -ne 5) {
         throw "Unsupported public payload schemaVersion '$($Manifest.schemaVersion)'."
     }
-    if (-not ([string]$Manifest.integrationVersion).Equals('0.5.6', [StringComparison]::Ordinal)) {
+    if (-not ([string]$Manifest.integrationVersion).Equals('0.5.8', [StringComparison]::Ordinal)) {
         throw "Unsupported public integrationVersion '$($Manifest.integrationVersion)'."
     }
     if ([int]$Manifest.clientBuild -ne 3396210) {
@@ -160,12 +160,12 @@ function Assert-PublicPayloadManifestContract {
         -Required @('id', 'archiveEntry', 'embeddedFilename', 'originalPycBytes', 'originalPycSha256', 'patchedPycBytes', 'patchedPycSha256', 'pythonRuntime', 'tools', 'intermediateArchive', 'startupPatch') `
         -Allowed @('id', 'archiveEntry', 'embeddedFilename', 'originalPycBytes', 'originalPycSha256', 'patchedPycBytes', 'patchedPycSha256', 'pythonRuntime', 'tools', 'intermediateArchive', 'startupPatch') `
         -Label 'Client guard generator'
-    if (-not ([string]$Manifest.generator.id).Equals('evejs-code-ccp-v12-local-source-v1', [StringComparison]::Ordinal)) {
+    if (-not ([string]$Manifest.generator.id).Equals('evejs-code-ccp-v13-local-source-v1', [StringComparison]::Ordinal)) {
         throw "Unsupported client guard generator '$($Manifest.generator.id)'."
     }
     if (-not ([string]$Manifest.generator.archiveEntry).Equals('eve/client/script/ui/shared/systemMenu/systemmenu.pyj', [StringComparison]::Ordinal) -or
         -not ([string]$Manifest.generator.embeddedFilename).Equals('eve/client/script/ui/shared/systemMenu/systemmenu.py', [StringComparison]::Ordinal)) {
-        throw 'Client guard archive entry or embedded filename does not match the reviewed V12 candidate contract.'
+        throw 'Client guard archive entry or embedded filename does not match the reviewed V13 candidate contract.'
     }
     Assert-PublicRelativePath -Value ([string]$Manifest.generator.archiveEntry) -Label 'Client guard archive entry' | Out-Null
     if ([Int64]$Manifest.generator.originalPycBytes -le 0 -or [Int64]$Manifest.generator.patchedPycBytes -le 0) {
@@ -175,9 +175,9 @@ function Assert-PublicPayloadManifestContract {
     Assert-PublicSha256Value -Value ([string]$Manifest.generator.patchedPycSha256) -Label 'Client guard patched PYC sha256' | Out-Null
     Assert-PublicObjectProperties -Value $Manifest.generator.intermediateArchive `
         -Required @('bytes', 'sha256') -Allowed @('bytes', 'sha256') -Label 'Client guard intermediate archive'
-    if ([Int64]$Manifest.generator.intermediateArchive.bytes -ne 30760389 -or
-        [string]$Manifest.generator.intermediateArchive.sha256 -cne '41A380AEF24D7304F595C7F4DBF93B5BD45D2F42A343E6DACD1C0096526A1FB1') {
-        throw 'Client guard intermediate archive does not match the reviewed V12 first-stage output.'
+    if ([Int64]$Manifest.generator.intermediateArchive.bytes -ne 30760794 -or
+        [string]$Manifest.generator.intermediateArchive.sha256 -cne '65A3396C7B7A06E4A2BFE93AA6601600CE67F6D3E3232F7FEF323D6EB43C6E1D') {
+        throw 'Client guard intermediate archive does not match the reviewed V13 first-stage output.'
     }
     $startup = $Manifest.generator.startupPatch
     Assert-PublicObjectProperties -Value $startup `
@@ -191,9 +191,9 @@ function Assert-PublicPayloadManifestContract {
     }
     if ([Int64]$startup.originalPycBytes -ne 27911 -or
         [string]$startup.originalPycSha256 -cne '924F5050A7476845B8DBBB4CC96032A14C7773FF18373D707B605A75821A6F61' -or
-        [Int64]$startup.patchedPycBytes -ne 30723 -or
-        [string]$startup.patchedPycSha256 -cne 'C0F26D50BFB11AF910F67E3CC365EAFC82A275FAEF060926ED2FD1F7F859E409') {
-        throw 'Client startup PYC contract does not match the reviewed V12 bytes.'
+        [Int64]$startup.patchedPycBytes -ne 30421 -or
+        [string]$startup.patchedPycSha256 -cne '58C9422BE7D76463EA749275B5459D380D49D473860D62A8DE55562064365E16') {
+        throw 'Client startup PYC contract does not match the reviewed V13 bytes.'
     }
     Assert-PublicObjectProperties -Value $Manifest.generator.pythonRuntime `
         -Required @('path', 'bytes', 'sha256', 'authenticode') `
@@ -224,6 +224,7 @@ function Assert-PublicPayloadManifestContract {
         'builder' = 'client-patches\tools\build_code_ccp.py'
         'graphics-template' = 'client-patches\templates\systemmenu_apply_graphics.py.in'
         'startup-template' = 'client-patches\templates\device_create.py.in'
+        'native-bridge' = 'client-patches\templates\native_nr_bridge.py.in'
         'local-source' = 'client-patches\tools\local_source.py'
         'reconstruct' = 'client-patches\tools\reconstruct.py'
     }
@@ -457,7 +458,7 @@ function Get-VerifiedPublicArtifact {
             -Uri ([string]$Artifact.url) `
             -OutFile $staged `
             -TimeoutSec 900 `
-            -Headers @{ 'User-Agent' = 'EveJS-DLSS5/0.5.6' } | Out-Null
+            -Headers @{ 'User-Agent' = 'EveJS-DLSS5/0.5.8' } | Out-Null
         Assert-PublicFileRecord -Path $staged -Record $Artifact -Label "Downloaded artifact '$($Artifact.id)'" | Out-Null
         Move-StagedFileIntoPlace -StagedPath $staged -Destination $destination
     } finally {
@@ -735,7 +736,7 @@ function Initialize-EveJSPublicClientGuard {
             className = $startup.className; methodName = $startup.methodName
         }
     )
-    Write-Step 'Deriving local client source and building the exact V12 guards in two verified stages'
+    Write-Step 'Deriving local client source and building the exact V13 guards in two verified stages'
     try {
         foreach ($stage in $stages) {
             # Do not let a between-stage helper/template change execute before
@@ -766,7 +767,7 @@ function Initialize-EveJSPublicClientGuard {
         Assert-PublicFileRecord -Path $pythonPath -Record $pythonRecord -Label 'Client Python runtime after generation' -CheckAuthenticode | Out-Null
         Assert-PublicGeneratorAssets -Manifest $Manifest
         Move-StagedFileIntoPlace -StagedPath $staged -Destination $Destination
-        Write-Okay 'locally derived archive exactly matches accepted V12 runtime bytes; this new package still requires its own manual acceptance'
+        Write-Okay 'locally derived archive matches the pinned V13 candidate bytes; live rendering acceptance is still required'
     } finally {
         foreach ($path in @($intermediate, $staged)) {
             if (Test-Path -LiteralPath $path -PathType Leaf) {
@@ -786,25 +787,25 @@ function Initialize-PublicPayload {
     New-Item -ItemType Directory -Path $script:PayloadRoot -Force | Out-Null
 
     $artifactPaths = @{}
-    foreach ($file in @($Manifest.files | Where-Object { ([string]$_.sourceKind).Equals('archive', [StringComparison]::Ordinal) })) {
-        $artifactId = [string]$file.artifactId
-        if (-not $artifactPaths.ContainsKey($artifactId)) {
-            $artifact = Get-PublicArtifactById -Manifest $Manifest -Id $artifactId
-            $artifactPaths[$artifactId] = Get-VerifiedPublicArtifact -Artifact $artifact
-        }
-    }
-
     foreach ($file in @($Manifest.files)) {
         $destination = Join-Path $script:PayloadRoot ([string]$file.source)
         Assert-PathInsideRoot -Path $destination -Root $script:PayloadRoot -BoundaryName 'materialized payload' | Out-Null
         switch ([string]$file.sourceKind) {
             'archive' {
-                $artifact = Get-PublicArtifactById -Manifest $Manifest -Id ([string]$file.artifactId)
-                Expand-VerifiedPublicZipEntry `
-                    -ArchivePath ([string]$artifactPaths[[string]$file.artifactId]) `
-                    -Artifact $artifact `
-                    -File $file `
-                    -Destination $destination | Out-Null
+                # A verified materialized file is sufficient for an offline
+                # preparation. Its source archive is only needed to rebuild it.
+                if (-not (Test-PublicFileRecord -Path $destination -Record $file)) {
+                    $artifactId = [string]$file.artifactId
+                    $artifact = Get-PublicArtifactById -Manifest $Manifest -Id $artifactId
+                    if (-not $artifactPaths.ContainsKey($artifactId)) {
+                        $artifactPaths[$artifactId] = Get-VerifiedPublicArtifact -Artifact $artifact
+                    }
+                    Expand-VerifiedPublicZipEntry `
+                        -ArchivePath ([string]$artifactPaths[$artifactId]) `
+                        -Artifact $artifact `
+                        -File $file `
+                        -Destination $destination | Out-Null
+                }
             }
             'bundled' {
                 if (-not (Test-PublicFileRecord -Path $destination -Record $file)) {

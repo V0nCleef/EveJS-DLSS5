@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 3,
+  "id": "evejs-dlss5",
+  "displayName": "EveJS DLSS5 + ReShade",
+  "version": "0.5.8",
+  "description": "Combined ReShade and DLSS5 client package. Installation is global to the physical client; Neural Rendering preferences are private to each launcher profile.",
+  "kind": "client-package",
+  "supportedBackends": [
+    "native",
+    "docker"
+  ],
+  "activation": {
+    "strategy": "client_package"
+  },
+  "restart": "client",
+  "launcherApi": {
+    "version": 1,
+    "minLauncherVersion": "1.0.53",
+    "helper": {
+      "runtime": "powershell",
+      "path": "EveJS-Integration/Invoke-LauncherMod.ps1"
+    },
+    "capabilities": [
+      "prepare_profile",
+      "install",
+      "verify",
+      "prepare_disable",
+      "prepare_remove",
+      "recover"
+    ]
+  },
+  "settings": {
+    "schemaVersion": 1,
+    "files": [
+      {
+        "id": "reshade",
+        "base": "profile",
+        "path": "ReShade.ini",
+        "format": "ini"
+      }
+    ],
+    "fields": [
+      {
+        "id": "neural_rendering",
+        "type": "boolean",
+        "default": true,
+        "storage": "numeric_boolean",
+        "file": "reshade",
+        "key": [
+          "RenoDX.DLSS5",
+          "NeuralUplift"
+        ],
+        "restart": "client",
+        "group": {
+          "en": "Neural Rendering",
+          "zh_CN": "神经渲染",
+          "ja": "ニューラルレンダリング",
+          "ko": "뉴럴 렌더링",
+          "fr": "Rendu neuronal",
+          "de": "Neuronales Rendering",
+          "nl": "Neurale rendering",
+          "ru": "Нейронный рендеринг"
+        },
+        "label": {
+          "en": "Enable Neural Rendering",
+          "zh_CN": "启用神经渲染",
+          "ja": "ニューラルレンダリングを有効にする",
+          "ko": "뉴럴 렌더링 활성화",
+          "fr": "Activer le rendu neuronal",
+          "de": "Neuronales Rendering aktivieren",
+          "nl": "Neurale rendering inschakelen",
+          "ru": "Включить нейронный рендеринг"
+        },
+        "description": {
+          "en": "Saved preference for this profile. Restart its client after changing this setting. In-game F6 still changes the current session; entering DLSS from another upscaler turns Neural Rendering on.",
+          "zh_CN": "此配置的已保存偏好。更改后请重启该配置的客户端。游戏中的 F6 仍可切换当前会话；从其他缩放模式切换到 DLSS 时会启用神经渲染。",
+          "ja": "このプロファイルの保存済み設定です。変更後はクライアントを再起動してください。ゲーム内の F6 で現在のセッションを切り替えられます。別のアップスケーラーから DLSS に切り替えるとニューラルレンダリングが有効になります。",
+          "ko": "이 프로필에 저장되는 설정입니다. 변경 후 해당 클라이언트를 다시 시작하세요. 게임 내 F6는 현재 세션을 전환하며, 다른 업스케일러에서 DLSS로 전환하면 뉴럴 렌더링이 켜집니다.",
+          "fr": "Préférence enregistrée pour ce profil. Redémarrez son client après modification. F6 reste disponible en jeu ; passer d'un autre mode de mise à l'échelle à DLSS active le rendu neuronal.",
+          "de": "Gespeicherte Einstellung für dieses Profil. Starten Sie den Client nach einer Änderung neu. F6 schaltet weiterhin die aktuelle Sitzung um; beim Wechsel von einem anderen Upscaler zu DLSS wird neuronales Rendering aktiviert.",
+          "nl": "Opgeslagen voorkeur voor dit profiel. Herstart de client na een wijziging. F6 blijft de huidige sessie schakelen; bij het overschakelen van een andere upscaler naar DLSS gaat neurale rendering aan.",
+          "ru": "Сохранённая настройка этого профиля. После изменения перезапустите его клиент. F6 по-прежнему переключает текущий сеанс; переход с другого масштабирования на DLSS включает нейронный рендеринг."
+        }
+      }
+    ]
+  },
+  "updates": {
+    "provider": "github",
+    "repository": "V0nCleef/EveJS-DLSS5",
+    "asset": "EveJS-DLSS5-{version}.zip",
+    "channel": "stable",
+    "tagPrefix": "v"
+  }
+}

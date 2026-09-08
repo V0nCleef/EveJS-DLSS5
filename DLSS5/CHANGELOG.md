@@ -1,3 +1,14 @@
+# 0.5.8 — 2026-09-08
+
+- Move mod-specific installation, profile settings and cleanup into the mod through Launcher 1.0.53's public interface.
+- Add profile-specific Neural Rendering settings and preserve existing private preferences and ReShade paths.
+- Improve DLSS transitions, native toggle acknowledgement, interrupted-change recovery and startup synchronization.
+- Keep F6 and synthetic transitions local to the intended client.
+- Improve shared-client ownership, removal and recovery without overwriting unrelated settings or addons.
+- Add GitHub update support for future releases; no EveJS server version restriction.
+
+Update the launcher to 1.0.53 first. Upgrading from 0.5.7 requires a one-time manual mod replacement through the launcher; keep private profile data and recovery backups.
+
 # 0.5.7 - 2026-09-05
 
 - Fix second and later launcher starts after RenoDX or F6 persists

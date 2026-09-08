@@ -4,6 +4,7 @@ param(
     [string]$Action = 'Ensure',
     [string]$EveJSRootPath = '',
     [string]$ClientRoot = '',
+    [string]$ReShadeBasePath = '',
     [ValidateRange(0, [int]::MaxValue)]
     [int]$ProcessId = 0,
     [switch]$NonInteractive,
@@ -167,7 +168,8 @@ try {
         -EveJSRootPath $target.EveJSRootPath `
         -ClientRoot $target.ClientRoot `
         -StateRootPath $target.StateRootPath `
-        -ProcessId $ProcessId
+        -ProcessId $ProcessId `
+        -ReShadeBasePath $ReShadeBasePath
     if (-not $?) { exit 1 }
 } catch {
     Write-Host ("DLSS5 standalone error: " + $_.Exception.Message) -ForegroundColor Red

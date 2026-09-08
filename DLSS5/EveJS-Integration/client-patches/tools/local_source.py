@@ -112,8 +112,10 @@ def _parenthesize(expr, kinds):
     return '(' + expr['text'] + ')' if expr['kind'] in kinds else expr['text']
 
 
-def _negate(expr):
-    if expr['kind'] == 'not':
+def _negate(expr, condition=False):
+    # Branches only test truthiness. Expression values must preserve the bool
+    # conversion of ``not not value`` instead of returning value itself.
+    if condition and expr['kind'] == 'not':
         return expr['operand']
     return _expr('not', 'not ' + _parenthesize(expr, ('or', 'compare')),
                  expr['start'], expr['end'], operand=expr)
@@ -258,7 +260,7 @@ class _Parser(object):
             if chain_end is not None:
                 self.mark(start, destination)
                 return _combine_or(terms), destination, chain_end
-            condition = _negate(condition)
+            condition = _negate(condition, condition=True)
         self.mark(start, jump_index + 1)
         return condition, jump_index + 1, destination
 

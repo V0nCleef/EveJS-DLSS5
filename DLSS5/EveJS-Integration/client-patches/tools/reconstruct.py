@@ -38,9 +38,11 @@ def substitute_child(expression, child, authored_name):
     return expression['text'].replace(child['text'], authored_name)
 
 
-def set_block(lines, start, count, name, replacement):
+def set_block(lines, count, name, replacement):
     marker = '@LOCAL:' + name + '@'
-    require(lines[start - 1].strip() == marker, 'missing or moved block marker ' + name)
+    positions = [index for index, line in enumerate(lines) if line.strip() == marker]
+    require(len(positions) == 1, 'missing or duplicate block marker ' + name)
+    start = positions[0] + 1
     require(len(replacement) == count, 'source line count changed for ' + name)
     require(all(not line for line in lines[start:start + count - 1]), 'block slot is not empty')
     lines[start - 1:start + count - 1] = replacement
@@ -76,21 +78,21 @@ def graphics(nodes, lines):
     query_receiver = select(query['owner']['function'], 'attribute')['owner']
     require(compare['right']['text'] == setter['args'][0]['text'], 'readiness target mismatch')
 
-    set_block(lines, 176, 2, 'graphics_setup', text_lines(nodes[1:3], 3))
-    set_block(lines, 221, 19, 'graphics_commit', text_lines(nodes[3:11], 3))
+    set_block(lines, 2, 'graphics_setup', text_lines(nodes[1:3], 3))
+    set_block(lines, 19, 'graphics_commit', text_lines(nodes[3:11], 3))
     # Retain the local panel condition and call; the local unbounded wait is
     # replaced by the existing authored bounded helper at its original slot.
     panel_node = dict(nested)
     panel_node['body'] = [panel]
-    set_block(lines, 247, 2, 'panel_refresh', text_lines([panel_node], 4))
-    set_block(lines, 249, 2, 'graphics_event', text_lines([nodes[12]], 3))
-    set_block(lines, 255, 1, 'crash_key', text_lines([nodes[13]], 3))
-    set_block(lines, 258, 2, 'window_guard', text_lines([window], 2))
+    set_block(lines, 2, 'panel_refresh', text_lines([panel_node], 4))
+    set_block(lines, 2, 'graphics_event', text_lines([nodes[12]], 3))
+    set_block(lines, 1, 'crash_key', text_lines([nodes[13]], 3))
+    set_block(lines, 2, 'window_guard', text_lines([window], 2))
     dev_local = nodes[2]['target']['text']
     require(nodes[2]['value']['text'] == query_receiver['text'], 'device alias mismatch')
     return {
         'ready_condition': (substitute_child(ready, compare['right'], 'targetTechnique'), 1),
-        'target_getter': (setter['args'][0]['text'], 3),
+        'target_getter': (setter['args'][0]['text'], 4),
         'preset_getter': (setter['args'][1]['text'], 1),
         'framegen_getter': (setter['args'][2]['text'], 1),
         'current_query': (substitute_child(query, query_receiver, dev_local), 1),
@@ -110,7 +112,7 @@ def startup(nodes, lines):
     # Preserve accepted line-table layout: one blank between the retry loop
     # and the final three local statements. No original statement text stored.
     rendered.insert(len(rendered) - 3, '')
-    set_block(lines, 202, 25, 'startup_body', rendered)
+    set_block(lines, 25, 'startup_body', rendered)
     return {}
 
 

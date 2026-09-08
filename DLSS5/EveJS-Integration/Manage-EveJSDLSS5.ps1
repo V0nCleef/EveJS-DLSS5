@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("Status", "Preflight", "Install", "Ensure", "UpgradePayload", "ApplyProfile", "Verify", "Runtime", "Restore")]
+    [ValidateSet("Status", "Preflight", "Install", "Ensure", "UpgradePayload", "ApplyProfile", "Verify", "VerifyClient", "Runtime", "Restore", "Recover")]
     [string]$Action = "Status",
 
     [ValidateSet("Original", "UpdatedRuntime", "NeuralRuntime", "ReShadeOnly", "Full", "NativePlusNeural", "NativePlusReShade", "DLSS5")]
@@ -15,6 +15,8 @@ param(
 
     [string]$ClientRoot = "",
 
+    [string]$ReShadeBasePath = "",
+
     [ValidatePattern('^state(?:-[A-Za-z0-9][A-Za-z0-9._-]*)?$')]
     [string]$StateDirectory = "state",
 
@@ -25,6 +27,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "ReShade-Lists.ps1")
+. (Join-Path $PSScriptRoot "Client-Attachments.ps1")
 
 function Resolve-InitialPhysicalPath {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -120,9 +124,11 @@ $script:ActiveManifestPath = Join-Path $script:StateRoot "active-install.json"
 $script:BaselinePath = Join-Path $script:StateRoot "baseline-tq.json"
 $script:ReShadeConfigPath = Join-Path $script:BinRoot "ReShade.ini"
 $script:ReShadeLogPath = Join-Path $script:BinRoot "ReShade.log"
+$script:PendingTransactionPath = Join-Path $script:StateRoot "pending-profile-transaction.json"
+$script:ProfileTransaction = $null
 $script:ExpectedExeSha256 = "2AAF7A9A8DFCDE85E4ADB50C1ECCD3756A4D29AEB854DFE69629846BA56EE979"
-$script:ExpectedPublicPayloadHelperSha256 = "B21B06F0EFD561E45DABAC6174D2FA71870EDF3923FE3140D591332AE7091EAA"
-$script:ExpectedPayloadManifestSha256 = "B722CD61F078C7079BC76085BB14127062FA7B2E67B294A79C28864E061CDB4B"
+$script:ExpectedPublicPayloadHelperSha256 = "D0C0C3CE06B6EC933432C4A5F0697BD17EBDCC053285C121893AA1243EFBCDC9"
+$script:ExpectedPayloadManifestSha256 = "1E4709B91F261C7DF52C9BA6356E925D9066F5D2A10AE871465CBF1AE87609D2"
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $script:ManagedReShadeKeys = @(
     [pscustomobject][ordered]@{
@@ -402,6 +408,7 @@ function Move-StagedFileIntoPlace {
         [Parameter(Mandatory = $true)][string]$StagedPath,
         [Parameter(Mandatory = $true)][string]$Destination
     )
+    Register-ProfileTransactionMutation -Path $Destination -NextSha256 (Get-Sha256 $StagedPath)
     if (Test-Path -LiteralPath $Destination -PathType Leaf) {
         # Windows PowerShell 5.1 cannot bind File.Replace when backupFileName is
         # null, even though newer .NET runtimes accept it. Use a real temporary
@@ -443,7 +450,7 @@ function Write-JsonAtomic {
 
 function Write-TextAtomic {
     param(
-        [Parameter(Mandatory = $true)][string]$Text,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text,
         [Parameter(Mandatory = $true)][string]$Path
     )
     $full = Assert-PathInsideAuthorizedRoots $Path
@@ -483,6 +490,151 @@ function Copy-FileAtomic {
             Remove-Item -LiteralPath $temporary -Force
         }
     }
+}
+
+function Get-ProfileTransactionTarget {
+    param([Parameter(Mandatory = $true)]$Entry)
+    switch ([string]$Entry.base) {
+        'client' { return (Assert-OwnedClientPath (Join-Path $script:ClientRoot ([string]$Entry.path))) }
+        'evejs' {
+            if ([string]$Entry.path -cne 'tools\ClientSETUP\scripts\EvEJSConfig.bat') { throw 'Unexpected transaction EveJS target.' }
+            return (Assert-OwnedEveJSPath (Join-Path $script:EveJSRoot ([string]$Entry.path)))
+        }
+        'state' {
+            if ([string]$Entry.path -cne 'active-install.json') { throw 'Unexpected transaction state target.' }
+            return (Assert-ClientScopedStatePath (Join-Path $script:StateRoot ([string]$Entry.path)))
+        }
+        default { throw 'Unknown transaction target boundary.' }
+    }
+}
+
+function Start-ProfileTransaction {
+    param([Parameter(Mandatory = $true)]$Manifest, [AllowEmptyCollection()][object[]]$Operations = @($Manifest.operations))
+    if (Test-Path -LiteralPath $script:PendingTransactionPath) {
+        throw 'An interrupted profile transaction needs -Action Recover before another change.'
+    }
+    $transactionId = [Guid]::NewGuid().ToString('N')
+    $relativeRoot = 'transactions\' + $transactionId
+    $transactionRoot = Assert-ClientScopedStatePath (Join-Path $script:StateRoot $relativeRoot)
+    New-Item -ItemType Directory -Path $transactionRoot | Out-Null
+    $targets = @($Operations | ForEach-Object { [pscustomobject]@{ base='client'; path=[string]$_.destination } })
+    $targets += [pscustomobject]@{ base='client'; path='bin64\ReShade.ini' }
+    $targets += [pscustomobject]@{ base='evejs'; path='tools\ClientSETUP\scripts\EvEJSConfig.bat' }
+    $targets += [pscustomobject]@{ base='state'; path='active-install.json' }
+    $entries = New-Object System.Collections.Generic.List[object]
+    foreach ($target in $targets) {
+        $path = Get-ProfileTransactionTarget $target
+        $exists = Test-Path -LiteralPath $path -PathType Leaf
+        $hash = if ($exists) { Get-Sha256 $path } else { $null }
+        $backupRelative = $relativeRoot + '\' + $entries.Count + '.bin'
+        if ($exists) {
+            Copy-FileAtomic -Source $path -Destination (Join-Path $script:StateRoot $backupRelative) -ExpectedSha256 $hash
+        }
+        $entries.Add([pscustomobject][ordered]@{
+            base=$target.base; path=$target.path; existed=$exists; beforeSha256=$hash;
+            backup=$backupRelative; mutationPlanned=$false; afterHashes=@(); afterAbsent=$false
+        })
+    }
+    $transaction = [pscustomobject][ordered]@{
+        schemaVersion=1; id=$transactionId; state='prepared';
+        clientRoot=$script:ClientRoot; evejsRoot=$script:EveJSRoot;
+        createdAtUtc=[DateTime]::UtcNow.ToString('o'); entries=$entries.ToArray()
+    }
+    Write-JsonAtomic -Value $transaction -Path $script:PendingTransactionPath
+    $script:ProfileTransaction = $transaction
+}
+
+function Register-ProfileTransactionMutation {
+    param([string]$Path, [AllowNull()][string]$NextSha256 = $null)
+    if ($null -eq $script:ProfileTransaction) { return }
+    $full = Get-NormalizedPath $Path
+    $matches = @($script:ProfileTransaction.entries | Where-Object {
+        (Get-NormalizedPath (Get-ProfileTransactionTarget $_)).Equals($full, [StringComparison]::OrdinalIgnoreCase)
+    })
+    if ($matches.Count -eq 0) { return }
+    if ($matches.Count -ne 1) { throw 'Ambiguous transaction target.' }
+    $entry = $matches[0]
+    $exists = Test-Path -LiteralPath $full -PathType Leaf
+    $hash = if ($exists) { Get-Sha256 $full } else { $null }
+    $allowedHashes = @([string]$entry.beforeSha256) + @($entry.afterHashes)
+    if (($exists -and $hash -notin $allowedHashes) -or
+        (-not $exists -and [bool]$entry.existed -and -not [bool]$entry.afterAbsent)) {
+        throw "File changed outside the pending transaction: $($entry.path)"
+    }
+    $entry.mutationPlanned = $true
+    if ($NextSha256) {
+        $entry.afterHashes = @(@($entry.afterHashes) + @($NextSha256) | Select-Object -Unique)
+    } else { $entry.afterAbsent = $true }
+    # Persist the permitted postimage BEFORE the mutation. Recovery accepts
+    # either side of an interrupted atomic swap, but refuses unrelated drift.
+    Write-JsonAtomic -Value $script:ProfileTransaction -Path $script:PendingTransactionPath
+}
+
+function Complete-ProfileTransaction {
+    if ($null -eq $script:ProfileTransaction) { return }
+    $completed = $script:ProfileTransaction
+    $script:ProfileTransaction = $null
+    $completed.state = 'committed'
+    Write-JsonAtomic -Value $completed -Path (Join-Path $script:StateRoot ('transactions\' + $completed.id + '\transaction.json'))
+    Remove-Item -LiteralPath (Assert-ClientScopedStatePath $script:PendingTransactionPath) -Force
+}
+
+function Invoke-RecoverProfileTransaction {
+    Assert-NoTargetClientProcess
+    Assert-ClientRecoveryLayout
+    $script:ProfileTransaction = $null
+    $pendingPath = Assert-ClientScopedStatePath $script:PendingTransactionPath
+    if (-not (Test-Path -LiteralPath $pendingPath -PathType Leaf)) {
+        Write-Okay 'No interrupted profile transaction needs recovery.'
+        return
+    }
+    $item = Get-Item -LiteralPath $pendingPath
+    if ($item.Length -gt 1048576) { throw 'Transaction journal is too large.' }
+    $transaction = [IO.File]::ReadAllText($pendingPath) | ConvertFrom-Json
+    if ([int]$transaction.schemaVersion -ne 1 -or [string]$transaction.id -notmatch '^[0-9a-f]{32}$' -or
+        -not (Get-NormalizedPath ([string]$transaction.clientRoot)).Equals((Get-NormalizedPath $script:ClientRoot), [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Transaction identity does not match this physical client.'
+    }
+    $script:EveJSRoot = Get-NormalizedPath ([string]$transaction.evejsRoot)
+    $script:ConfigPath = Join-Path $script:EveJSRoot 'tools\ClientSETUP\scripts\EvEJSConfig.bat'
+    $recoverable = New-Object System.Collections.Generic.List[object]
+    $seen = @{}
+    foreach ($entry in @($transaction.entries)) {
+        $target = Get-ProfileTransactionTarget $entry
+        if ($seen.ContainsKey($target.ToLowerInvariant())) { throw 'Duplicate transaction target.' }
+        $seen[$target.ToLowerInvariant()] = $true
+        if (-not [bool]$entry.mutationPlanned) { continue }
+        if ([string]$entry.base -eq 'evejs' -and -not (Test-Path -LiteralPath $script:EveJSRoot -PathType Container)) {
+            Write-WarningLine 'The former EveJS root is absent; its config snapshot is retained without recreating that server.'
+            continue
+        }
+        $backup = Assert-ClientScopedStatePath (Join-Path $script:StateRoot ([string]$entry.backup))
+        $expectedPrefix = 'transactions\' + $transaction.id + '\'
+        if (-not ([string]$entry.backup).StartsWith($expectedPrefix, [StringComparison]::Ordinal)) { throw 'Unexpected transaction backup path.' }
+        if ([bool]$entry.existed -and (-not (Test-Path -LiteralPath $backup -PathType Leaf) -or (Get-Sha256 $backup) -ne [string]$entry.beforeSha256)) {
+            throw "Transaction preimage is missing or changed: $($entry.path)"
+        }
+        $exists = Test-Path -LiteralPath $target -PathType Leaf
+        if (($exists -and (Get-Sha256 $target) -notin (@([string]$entry.beforeSha256) + @($entry.afterHashes))) -or
+            (-not $exists -and [bool]$entry.existed -and -not [bool]$entry.afterAbsent)) {
+            throw "Recovery preserved a file changed outside the transaction: $($entry.path)"
+        }
+        $recoverable.Add($entry)
+    }
+    # Validate every preimage/postimage before the first rollback write. The
+    # receipt is restored last, after the matching files are back in place.
+    foreach ($entry in $recoverable) {
+        $target = Get-ProfileTransactionTarget $entry
+        if ([bool]$entry.existed) {
+            Copy-FileAtomic -Source (Join-Path $script:StateRoot ([string]$entry.backup)) -Destination $target -ExpectedSha256 ([string]$entry.beforeSha256)
+        } elseif (Test-Path -LiteralPath $target -PathType Leaf) {
+            Remove-Item -LiteralPath $target -Force
+        }
+    }
+    $transaction.state = 'rolledBack'
+    Write-JsonAtomic -Value $transaction -Path (Join-Path $script:StateRoot ('transactions\' + $transaction.id + '\transaction.json'))
+    Remove-Item -LiteralPath $pendingPath -Force
+    Write-Okay 'The interrupted profile operation was restored to its own verified preimages.'
 }
 
 function Test-AsciiMarker {
@@ -614,6 +766,9 @@ function Test-FileAbsentFromBaseline {
     }
     $baseline = Get-Content -LiteralPath $baselinePath -Raw | ConvertFrom-Json
     Assert-BaselineTargets -Baseline $baseline
+    if ($baseline.PSObject.Properties.Name -contains 'coveredPaths' -and $RelativePath -notin @($baseline.coveredPaths)) {
+        throw "This scoped baseline does not establish absence for $RelativePath."
+    }
     foreach ($file in @($baseline.files)) {
         if (([string]$file.path).Equals($RelativePath, [StringComparison]::OrdinalIgnoreCase)) {
             return $false
@@ -676,24 +831,41 @@ function Assert-BaselineTargets {
 }
 
 function Assert-NoTargetClientProcess {
-    $processes = @(Get-Process -Name "exefile" -ErrorAction SilentlyContinue)
+    $inspection = Get-TargetClientProcessState
+    $processes = @($inspection.TargetProcesses)
     if ($processes.Count -gt 0) {
         $processIds = @($processes | ForEach-Object { [string]$_.Id }) -join ", "
-        throw "An EVE client process is running (exefile.exe PID $processIds). Close every EVE client before changing shared DLLs or configuration."
+        throw "EVE clients are using the selected physical client (PID $processIds). Close those clients before changing their shared DLLs or configuration."
+    }
+    if (@($inspection.UnresolvedProcessIds).Count -gt 0) {
+        $processIds = @($inspection.UnresolvedProcessIds) -join ", "
+        throw "The executable path of EVE client PID(s) $processIds could not be resolved. Close those clients or make their executable paths readable before changing this installation."
+    }
+}
+
+function Get-TargetClientProcessState {
+    $targetExe = Get-PhysicalPath $script:ExePath
+    $matches = New-Object System.Collections.Generic.List[object]
+    $unresolved = New-Object System.Collections.Generic.List[int]
+    foreach ($process in @(Get-Process -Name "exefile" -ErrorAction SilentlyContinue)) {
+        $processPath = $null
+        try {
+            if ($process.Path) { $processPath = Get-PhysicalPath $process.Path }
+        } catch { }
+        if (-not $processPath) {
+            $unresolved.Add([int]$process.Id)
+        } elseif ($processPath.Equals($targetExe, [StringComparison]::OrdinalIgnoreCase)) {
+            $matches.Add($process)
+        }
+    }
+    return [pscustomobject]@{
+        TargetProcesses = $matches.ToArray()
+        UnresolvedProcessIds = $unresolved.ToArray()
     }
 }
 
 function Get-IsolatedClientProcesses {
-    $targetExe = Get-PhysicalPath $script:ExePath
-    $matches = New-Object System.Collections.Generic.List[object]
-    foreach ($process in @(Get-Process -Name "exefile" -ErrorAction SilentlyContinue)) {
-        $processPath = $null
-        try { $processPath = $process.Path } catch { }
-        if ($processPath -and (Get-PhysicalPath $processPath).Equals($targetExe, [StringComparison]::OrdinalIgnoreCase)) {
-            $matches.Add($process)
-        }
-    }
-    return $matches.ToArray()
+    return (Get-TargetClientProcessState).TargetProcesses
 }
 
 function Select-RuntimeTargetProcess {
@@ -1109,63 +1281,6 @@ function Remove-IniValueText {
     return (($lines -join "`r`n").TrimEnd([char[]]@("`r", "`n")) + "`r`n")
 }
 
-function Remove-IniSectionText {
-    param(
-        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text,
-        [Parameter(Mandatory = $true)][string]$Section
-    )
-
-    $result = New-Object System.Collections.Generic.List[string]
-    $insideTarget = $false
-    foreach ($line in @([regex]::Split($Text, '\r?\n'))) {
-        $header = [regex]::Match($line, '^\s*\[([^\]]+)\]\s*$')
-        if ($header.Success) {
-            $insideTarget = $header.Groups[1].Value.Equals($Section, [StringComparison]::OrdinalIgnoreCase)
-            if ($insideTarget) { continue }
-        }
-        if (-not $insideTarget) { $result.Add($line) }
-    }
-    return (($result -join "`r`n").TrimEnd([char[]]@("`r", "`n")) + "`r`n")
-}
-
-function Get-IniSectionText {
-    param(
-        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text,
-        [Parameter(Mandatory = $true)][string]$Section
-    )
-
-    $result = New-Object System.Collections.Generic.List[string]
-    $insideTarget = $false
-    foreach ($line in @([regex]::Split($Text, '\r?\n'))) {
-        $header = [regex]::Match($line, '^\s*\[([^\]]+)\]\s*$')
-        if ($header.Success) {
-            $isTarget = $header.Groups[1].Value.Equals($Section, [StringComparison]::OrdinalIgnoreCase)
-            if ($isTarget) {
-                if ($result.Count -gt 0 -and $result[$result.Count - 1].Length -gt 0) { $result.Add("") }
-                $insideTarget = $true
-                $result.Add($line)
-                continue
-            }
-            $insideTarget = $false
-        }
-        if ($insideTarget) { $result.Add($line) }
-    }
-    return (($result -join "`r`n").TrimEnd([char[]]@("`r", "`n")))
-}
-
-function Restore-IniSectionText {
-    param(
-        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$CurrentText,
-        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$OriginalText,
-        [Parameter(Mandatory = $true)][string]$Section
-    )
-
-    $withoutCurrent = Remove-IniSectionText -Text $CurrentText -Section $Section
-    $originalSection = Get-IniSectionText -Text $OriginalText -Section $Section
-    if ([string]::IsNullOrWhiteSpace($originalSection)) { return $withoutCurrent }
-    return ($withoutCurrent.TrimEnd([char[]]@("`r", "`n")) + "`r`n`r`n" + $originalSection + "`r`n")
-}
-
 function Test-IniHasMeaningfulValues {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text)
     foreach ($line in @([regex]::Split($Text, '\r?\n'))) {
@@ -1203,6 +1318,7 @@ function Initialize-ReShadeConfigTracking {
                     section = [string]$key.section
                     key = [string]$key.key
                     installedValue = [string]$key.value
+                    ownership = if (Test-ReShadeEarlyLoadKey $key) { 'listMember' } else { 'scalar' }
                     originalPresent = [bool]$state.present
                     originalValue = if ($state.present) { [string]$state.value } else { $null }
                 }
@@ -1243,6 +1359,7 @@ function Initialize-ReShadeConfigTracking {
             section = [string]$key.section
             key = [string]$key.key
             installedValue = [string]$key.value
+            ownership = if (Test-ReShadeEarlyLoadKey $key) { 'listMember' } else { 'scalar' }
             originalPresent = [bool]$state.present
             originalValue = if ($state.present) { [string]$state.value } else { $null }
         })
@@ -1292,6 +1409,21 @@ function Set-ReShadeConfigForProfile {
     }
 
     foreach ($managed in @($Manifest.reshadeConfig.managedKeys)) {
+        if (Test-ReShadeEarlyLoadKey $managed) {
+            $state=Get-IniValueState -Text $text -Section ([string]$managed.section) -Key ([string]$managed.key)
+            if ($state.count -gt 1) { throw 'Duplicate ReShade early-load addon list.' }
+            if ($enableRenoDx) {
+                $value=[string]$state.value
+                if (($managed.PSObject.Properties.Name -notcontains 'ownership' -or $managed.ownership -ne 'listMember') -and [bool]$managed.originalPresent) {
+                    foreach ($entry in @(Split-ReShadeList ([string]$managed.originalValue))) { $value=Add-ReShadeListItem $value $entry }
+                }
+                $value=Add-ReShadeListItem $value 'renodx-dlss5.addon64'
+            } else { $value=Get-ReShadeEarlyLoadRestoredValue $managed ([string]$state.value) }
+            if ($value -or [bool]$managed.originalPresent) {
+                $text=Set-IniValueText -Text $text -Section ([string]$managed.section) -Key ([string]$managed.key) -Value $value
+            } else { $text=Remove-IniValueText -Text $text -Section ([string]$managed.section) -Key ([string]$managed.key) }
+            continue
+        }
         if ($enableRenoDx) {
             $text = Set-IniValueText -Text $text -Section ([string]$managed.section) -Key ([string]$managed.key) -Value ([string]$managed.installedValue)
         } elseif ([bool]$managed.originalPresent) {
@@ -1303,6 +1435,7 @@ function Set-ReShadeConfigForProfile {
 
     if (-not [bool]$Manifest.reshadeConfig.originalExists -and -not (Test-IniHasMeaningfulValues -Text $text)) {
         if (Test-Path -LiteralPath $script:ReShadeConfigPath -PathType Leaf) {
+            Register-ProfileTransactionMutation -Path $script:ReShadeConfigPath
             Remove-Item -LiteralPath (Assert-PathInsideRoot -Path $script:ReShadeConfigPath -Root $script:ClientRoot -BoundaryName "client") -Force
         }
         $Manifest.reshadeConfig.lastAppliedSha256 = $null
@@ -1344,6 +1477,13 @@ function Test-ReShadeConfigForProfile {
         if ($state.count -gt 1) {
             throw "Duplicate ReShade.ini key: [$($managed.section)] $($managed.key)"
         }
+        if (Test-ReShadeEarlyLoadKey $managed) {
+            $expectedMember=$enableRenoDx -or ([bool]$managed.originalPresent -and (Test-ReShadeListItem ([string]$managed.originalValue) 'renodx-dlss5.addon64'))
+            if ((Test-ReShadeListItem ([string]$state.value) 'renodx-dlss5.addon64') -ne $expectedMember) {
+                throw 'ReShade early-load RenoDX membership does not match the selected profile.'
+            }
+            continue
+        }
         if ($expectedPresent) {
             $valueMatches = $state.present -and ([string]$state.value).Equals($expectedValue, [StringComparison]::Ordinal)
             if ($enableRenoDx -and
@@ -1366,80 +1506,57 @@ function Test-ReShadeConfigForProfile {
 
 function Restore-ReShadeConfig {
     param([Parameter(Mandatory = $true)]$Manifest)
-    if (-not ($Manifest.PSObject.Properties.Name -contains "reshadeConfig") -or $null -eq $Manifest.reshadeConfig) {
-        return
-    }
-
-    $preserveRoot = $null
-    $currentExists = Test-Path -LiteralPath $script:ReShadeConfigPath -PathType Leaf
-    $currentText = if ($currentExists) { [IO.File]::ReadAllText($script:ReShadeConfigPath) } else { "" }
-    if ($currentExists) {
-        $preserveRoot = Assert-ClientScopedStatePath -Path (Join-Path $script:StateRoot ("uninstall-preserved\" + [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssfffZ")))
-        New-Item -ItemType Directory -Path $preserveRoot -Force | Out-Null
-        $preserved = Assert-ClientScopedStatePath -Path (Join-Path $preserveRoot "ReShade.ini")
-        Copy-Item -LiteralPath $script:ReShadeConfigPath -Destination $preserved
-        $Manifest.reshadeConfig.preservedOnRestore = $preserved.Substring($script:StateRoot.Length + 1)
-        Add-OrSetProperty -Object $Manifest.reshadeConfig -Name "preservedPathsRelativeTo" -Value "stateRoot"
-        Write-Okay "archived current ReShade.ini before removal"
-    }
-
-    $originalText = ""
-    if ([bool]$Manifest.reshadeConfig.originalExists) {
-        $backup = Assert-ClientScopedStatePath -Path (Join-Path (Get-BackupRoot $Manifest) ([string]$Manifest.reshadeConfig.backup))
-        if (-not (Test-Path -LiteralPath $backup -PathType Leaf) -or
-            (Get-Sha256 $backup) -ne [string]$Manifest.reshadeConfig.originalSha256) {
-            throw "Original ReShade.ini backup is missing or invalid: $backup"
-        }
-        $originalText = [IO.File]::ReadAllText($backup)
-
-        if (-not $currentExists) {
+    if (-not ($Manifest.PSObject.Properties.Name -contains 'reshadeConfig') -or $null -eq $Manifest.reshadeConfig) { return }
+    if ($Manifest.reshadeConfig.restoredAtUtc) { return }
+    $exists = Test-Path -LiteralPath $script:ReShadeConfigPath -PathType Leaf
+    if (-not $exists) {
+        if ([bool]$Manifest.reshadeConfig.originalExists) {
+            $backup = Assert-ClientScopedStatePath (Join-Path (Get-BackupRoot $Manifest) ([string]$Manifest.reshadeConfig.backup))
             Copy-FileAtomic -Source $backup -Destination $script:ReShadeConfigPath -ExpectedSha256 ([string]$Manifest.reshadeConfig.originalSha256)
-            Write-Okay "restored missing pre-existing ReShade.ini"
         }
-    }
-
-    if ($currentExists -and -not [bool]$Manifest.reshadeConfig.originalExists) {
-        # ReShade and RenoDX may generate many settings after first use. When
-        # no ReShade.ini existed before installation, exact rollback means the
-        # active file must go. The live version was archived above first.
-        Remove-Item -LiteralPath (Assert-PathInsideRoot -Path $script:ReShadeConfigPath -Root $script:ClientRoot -BoundaryName "client") -Force
-        Write-Okay "removed generated ReShade.ini (archived before removal)"
-    } elseif ($currentExists) {
-        $restoredText = $currentText
+    } else {
+        $text = [IO.File]::ReadAllText($script:ReShadeConfigPath)
+        $preserved = New-Object System.Collections.Generic.List[string]
         foreach ($managed in @($Manifest.reshadeConfig.managedKeys)) {
+            $state = Get-IniValueState -Text $text -Section ([string]$managed.section) -Key ([string]$managed.key)
+            if ((Test-ReShadeEarlyLoadKey $managed) -and $state.present -and $state.count -eq 1) {
+                $value=Get-ReShadeEarlyLoadRestoredValue $managed ([string]$state.value)
+                if ($value -or [bool]$managed.originalPresent) {
+                    $text=Set-IniValueText -Text $text -Section ([string]$managed.section) -Key ([string]$managed.key) -Value $value
+                } else { $text=Remove-IniValueText -Text $text -Section ([string]$managed.section) -Key ([string]$managed.key) }
+                continue
+            }
+            if (-not $state.present) {
+                if ([bool]$managed.originalPresent) { $preserved.Add('[' + $managed.section + '] ' + $managed.key) }
+                continue
+            }
+            $ownedValue = ([string]$state.value).Equals([string]$managed.installedValue, [StringComparison]::Ordinal)
+            if ([string]$managed.section -eq 'RenoDX.DLSS5' -and [string]$managed.key -eq 'NeuralUplift') {
+                $ownedValue = [string]$state.value -in @('0', '1')
+            }
+            if ($state.count -ne 1 -or -not $ownedValue) {
+                $preserved.Add('[' + $managed.section + '] ' + $managed.key)
+                continue
+            }
             if ([bool]$managed.originalPresent) {
-                $restoredText = Set-IniValueText -Text $restoredText -Section ([string]$managed.section) -Key ([string]$managed.key) -Value ([string]$managed.originalValue)
+                $text = Set-IniValueText -Text $text -Section ([string]$managed.section) -Key ([string]$managed.key) -Value ([string]$managed.originalValue)
             } else {
-                $restoredText = Remove-IniValueText -Text $restoredText -Section ([string]$managed.section) -Key ([string]$managed.key)
+                $text = Remove-IniValueText -Text $text -Section ([string]$managed.section) -Key ([string]$managed.key)
             }
         }
-
-        # Replace the whole RenoDX section with its pre-install version. This
-        # removes settings generated dynamically by the add-on without
-        # clobbering unrelated ReShade settings changed after installation.
-        $restoredText = Restore-IniSectionText -CurrentText $restoredText -OriginalText $originalText -Section "RenoDX.DLSS5"
-        Write-TextAtomic -Text $restoredText -Path $script:ReShadeConfigPath
-        Write-Okay "restored the original RenoDX section and preserved unrelated ReShade settings"
-    }
-
-    $preservedGenerated = New-Object System.Collections.Generic.List[string]
-    foreach ($relativePath in @("bin64\ReShade.log", "bin64\ReShadePreset.ini")) {
-        $artifactPath = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot $relativePath)
-        if ((Test-Path -LiteralPath $artifactPath -PathType Leaf) -and (Test-FileAbsentFromBaseline -RelativePath $relativePath)) {
-            if ($null -eq $preserveRoot) {
-                $preserveRoot = Assert-ClientScopedStatePath -Path (Join-Path $script:StateRoot ("uninstall-preserved\" + [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssfffZ")))
-                New-Item -ItemType Directory -Path $preserveRoot -Force | Out-Null
-            }
-            $preserved = Assert-ClientScopedStatePath -Path (Join-Path $preserveRoot ([IO.Path]::GetFileName($relativePath)))
-            Copy-Item -LiteralPath $artifactPath -Destination $preserved
-            Remove-Item -LiteralPath (Assert-PathInsideRoot -Path $artifactPath -Root $script:ClientRoot -BoundaryName "client") -Force
-            $preservedGenerated.Add($preserved.Substring($script:StateRoot.Length + 1))
-            Write-Okay "archived and removed generated $relativePath"
+        # Originally absent is not ownership of future user/mod values. Remove
+        # an empty generated INI; otherwise keep every unowned setting in place.
+        if (-not [bool]$Manifest.reshadeConfig.originalExists -and -not (Test-IniHasMeaningfulValues -Text $text)) {
+            Remove-Item -LiteralPath (Assert-OwnedClientPath $script:ReShadeConfigPath) -Force
+        } else {
+            Write-TextAtomic -Text $text -Path $script:ReShadeConfigPath
         }
+        Add-OrSetProperty -Object $Manifest.reshadeConfig -Name 'preservedChangedKeys' -Value $preserved.ToArray()
     }
-    Add-OrSetProperty -Object $Manifest.reshadeConfig -Name "generatedArtifactsPreservedOnRestore" -Value $preservedGenerated.ToArray()
-    Add-OrSetProperty -Object $Manifest.reshadeConfig -Name "preservedPathsRelativeTo" -Value "stateRoot"
-    $Manifest.reshadeConfig.restoredAtUtc = [DateTime]::UtcNow.ToString("o")
+    # Logs/presets have no exclusive ownership record. Leave existing values
+    # available; an old absence snapshot cannot authorize deleting new data.
+    $Manifest.reshadeConfig.restoredAtUtc = [DateTime]::UtcNow.ToString('o')
+    Write-Okay 'Restored owned ReShade keys and retained unrelated settings, presets and logs.'
 }
 
 function Get-LiteralBatchSettingMatches {
@@ -1557,6 +1674,101 @@ function Assert-EveJSRootContract {
     }
 }
 
+function Restore-OwnedBatchSettings {
+    param([Parameter(Mandatory = $true)]$Manifest)
+    if (-not (Test-Path -LiteralPath $script:EveJSRoot -PathType Container)) {
+        Write-WarningLine 'The former EveJS root is absent; its config backup was retained without recreating the server.'
+        return
+    }
+    $backup = Assert-ClientScopedStatePath (Join-Path (Get-BackupRoot $Manifest) ([string]$Manifest.config.backup))
+    if (-not (Test-Path -LiteralPath $script:ConfigPath -PathType Leaf)) {
+        Copy-FileAtomic -Source $backup -Destination $script:ConfigPath -ExpectedSha256 ([string]$Manifest.config.originalSha256)
+        return
+    }
+    if ((Get-Sha256 $script:ConfigPath) -eq [string]$Manifest.config.originalSha256) { return }
+    if ($Manifest.config.installedSha256 -and (Get-Sha256 $script:ConfigPath) -eq [string]$Manifest.config.installedSha256) {
+        # Exact unchanged output can use the exact original, including its
+        # formatting. Hash drift selects scoped restoration instead of failing.
+        Copy-FileAtomic -Source $backup -Destination $script:ConfigPath -ExpectedSha256 ([string]$Manifest.config.originalSha256)
+        return
+    }
+    $original = [IO.File]::ReadAllText($backup)
+    $current = [IO.File]::ReadAllText($script:ConfigPath)
+    $installed = [ordered]@{ EVEJS_CLIENT_PATH=$script:ClientRoot; EVEJS_CLIENT_EXE='bin64\exefile.exe'; TRINITYPLATFORM='dx12'; EVEJS_DLSS5='on' }
+    $preserved = New-Object System.Collections.Generic.List[string]
+    foreach ($name in $installed.Keys) {
+        $matches = @(Get-LiteralBatchSettingMatches -Text $current -Name $name)
+        $originalMatches = @(Get-LiteralBatchSettingMatches -Text $original -Name $name)
+        if ($matches.Count -ne 1 -or (Get-LiteralBatchSettingCandidateCount -Text $current -Name $name) -ne 1 -or $originalMatches.Count -gt 1) {
+            $preserved.Add($name)
+            continue
+        }
+        $value = Get-LiteralBatchSettingValue $matches[0]
+        if (-not $value.Equals([string]$installed[$name], [StringComparison]::OrdinalIgnoreCase)) {
+            # Someone deliberately changed this owned setting after install.
+            # Keep their current value; removal is not permission to reset it.
+            $preserved.Add($name)
+            continue
+        }
+        $replacement = if ($originalMatches.Count) { $originalMatches[0].Value } else { '' }
+        $current = $current.Remove($matches[0].Index, $matches[0].Length).Insert($matches[0].Index, $replacement)
+    }
+    $current = $current.Replace('rem DLSS5 integration: force the DX12 Trinity renderer required by RenoDX.', '')
+    Write-TextAtomic -Text $current -Path $script:ConfigPath
+    Add-OrSetProperty -Object $Manifest.config -Name 'preservedChangedKeys' -Value $preserved.ToArray()
+    Add-OrSetProperty -Object $Manifest.config -Name 'restoredOwnedSettings' -Value $true
+}
+
+function Assert-OwnedConfigRestoration {
+    param([Parameter(Mandatory = $true)]$Manifest)
+    if (-not (Test-PrimaryServerDetached $Manifest) -and (Test-Path -LiteralPath $script:EveJSRoot -PathType Container)) {
+        if (-not (Test-Path -LiteralPath $script:ConfigPath -PathType Leaf)) { throw 'The former server configuration is missing after restoration.' }
+        $backup=Assert-ClientScopedStatePath (Join-Path (Get-BackupRoot $Manifest) ([string]$Manifest.config.backup))
+        $original=[IO.File]::ReadAllText($backup)
+        $current=[IO.File]::ReadAllText($script:ConfigPath)
+        $preserved=if ($Manifest.config.PSObject.Properties.Name -contains 'preservedChangedKeys') { @($Manifest.config.preservedChangedKeys) } else { @() }
+        foreach ($name in @('EVEJS_CLIENT_PATH','EVEJS_CLIENT_EXE','TRINITYPLATFORM','EVEJS_DLSS5')) {
+            if ($name -in $preserved) { continue }
+            $before=@(Get-LiteralBatchSettingMatches $original $name)
+            $after=@(Get-LiteralBatchSettingMatches $current $name)
+            if ($before.Count -ne $after.Count) { throw "Owned batch setting not restored: $name" }
+            for ($index=0; $index -lt $before.Count; $index++) {
+                if ((Get-LiteralBatchSettingValue $before[$index]) -cne (Get-LiteralBatchSettingValue $after[$index])) { throw "Owned batch value not restored: $name" }
+            }
+        }
+    }
+    if ($Manifest.PSObject.Properties.Name -contains 'reshadeConfig' -and $null -ne $Manifest.reshadeConfig) {
+        $exists=Test-Path -LiteralPath $script:ReShadeConfigPath -PathType Leaf
+        if ([bool]$Manifest.reshadeConfig.originalExists -and -not $exists) { throw 'The original ReShade configuration is missing.' }
+        $text=if ($exists) { [IO.File]::ReadAllText($script:ReShadeConfigPath) } else { '' }
+        $preserved=if ($Manifest.reshadeConfig.PSObject.Properties.Name -contains 'preservedChangedKeys') { @($Manifest.reshadeConfig.preservedChangedKeys) } else { @() }
+        foreach ($managed in @($Manifest.reshadeConfig.managedKeys)) {
+            if (('['+$managed.section+'] '+$managed.key) -in $preserved) { continue }
+            $state=Get-IniValueState -Text $text -Section ([string]$managed.section) -Key ([string]$managed.key)
+            if (Test-ReShadeEarlyLoadKey $managed) {
+                $expectedMember=[bool]$managed.originalPresent -and (Test-ReShadeListItem ([string]$managed.originalValue) 'renodx-dlss5.addon64')
+                if ($state.count -gt 1 -or (Test-ReShadeListItem ([string]$state.value) 'renodx-dlss5.addon64') -ne $expectedMember) {
+                    throw 'Owned ReShade early-load member was not restored.'
+                }
+                continue
+            }
+            if ([bool]$state.present -ne [bool]$managed.originalPresent -or $state.count -gt 1 -or
+                ($state.present -and [string]$state.value -cne [string]$managed.originalValue)) {
+                throw "Owned ReShade key not restored: [$($managed.section)] $($managed.key)"
+            }
+        }
+    }
+}
+
+function Assert-ClientRecoveryLayout {
+    foreach ($path in @($script:ClientRoot, $script:BinRoot, $script:ExePath)) {
+        Assert-OwnedClientPath $path | Out-Null
+        if (-not (Test-Path -LiteralPath $path)) { throw "Recovery client path is missing: $path" }
+    }
+    Assert-ClientScopedStatePath $script:StateRoot | Out-Null
+    if ((Get-Sha256 $script:ExePath) -ne $script:ExpectedExeSha256) { throw 'Recovery executable identity mismatch.' }
+}
+
 function Assert-WorkspaceLayout {
     Assert-PathInsideAuthorizedRoots -Path $script:StateRoot | Out-Null
     Assert-PathInsideRoot -Path $script:EveJSRoot -Root $script:WorkspaceRoot -BoundaryName "EveJS workspace" | Out-Null
@@ -1659,8 +1871,14 @@ function Assert-RequiredOriginalTarget {
 }
 
 function New-ClientBaseline {
-    Write-Step "Hashing the untouched tq client baseline"
-    $files = @(Get-ChildItem -LiteralPath $script:ClientRoot -File -Recurse | Sort-Object FullName)
+    # Installation operations already record hashes for every payload target.
+    # This inventory is only used to establish generated support-file absence.
+    Write-Step "Recording the client support-file baseline"
+    $coveredPaths = @('bin64\ReShade.log', 'bin64\ReShadePreset.ini')
+    $files = @($coveredPaths | ForEach-Object {
+        $path = Assert-OwnedClientPath (Join-Path $script:ClientRoot $_)
+        if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Item -LiteralPath $path }
+    })
     $entries = New-Object System.Collections.Generic.List[object]
     foreach ($file in $files) {
         $relative = $file.FullName.Substring($script:ClientRoot.Length + 1)
@@ -1673,6 +1891,8 @@ function New-ClientBaseline {
     }
     $baseline = [ordered]@{
         schemaVersion = 5
+        inventoryScope = 'generated-support-files'
+        coveredPaths = $coveredPaths
         stateScope = "client"
         createdAtUtc = [DateTime]::UtcNow.ToString("o")
         workspaceRoot = $script:WorkspaceRoot
@@ -1861,7 +2081,7 @@ function Invoke-RecoveryRollback {
 
     $configBackup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$Manifest.config.backup))
     if (Test-Path -LiteralPath $configBackup -PathType Leaf) {
-        Copy-FileAtomic -Source $configBackup -Destination $script:ConfigPath -ExpectedSha256 ([string]$Manifest.config.originalSha256)
+        Restore-OwnedBatchSettings -Manifest $Manifest
     }
     Restore-ReShadeConfig -Manifest $Manifest
 }
@@ -1885,40 +2105,7 @@ function Assert-RecoveryRollbackComplete {
     if ($exeHash -ne [string]$Manifest.executable.sha256 -or $exeHash -ne $script:ExpectedExeSha256) {
         throw "Rollback verification found an unexpected exefile.exe hash."
     }
-    if (-not (Test-Path -LiteralPath $script:ConfigPath -PathType Leaf) -or
-        (Get-Sha256 $script:ConfigPath) -ne [string]$Manifest.config.originalSha256) {
-        throw "Rollback verification found an unrestored EvEJSConfig.bat."
-    }
-
-    if ($Manifest.PSObject.Properties.Name -contains "reshadeConfig" -and $null -ne $Manifest.reshadeConfig) {
-        $configExists = Test-Path -LiteralPath $script:ReShadeConfigPath -PathType Leaf
-        if (-not [bool]$Manifest.reshadeConfig.originalExists -and $configExists) {
-            throw "Rollback verification found a generated ReShade.ini."
-        }
-        if ([bool]$Manifest.reshadeConfig.originalExists) {
-            if (-not $configExists) {
-                throw "Rollback verification found the pre-existing ReShade.ini missing."
-            }
-            $backup = Assert-ClientScopedStatePath -Path (Join-Path (Get-BackupRoot $Manifest) ([string]$Manifest.reshadeConfig.backup))
-            if (-not (Test-Path -LiteralPath $backup -PathType Leaf) -or
-                (Get-Sha256 $backup) -ne [string]$Manifest.reshadeConfig.originalSha256) {
-                throw "Rollback verification found an invalid ReShade.ini backup."
-            }
-            $currentSection = Get-IniSectionText -Text ([IO.File]::ReadAllText($script:ReShadeConfigPath)) -Section "RenoDX.DLSS5"
-            $originalSection = Get-IniSectionText -Text ([IO.File]::ReadAllText($backup)) -Section "RenoDX.DLSS5"
-            if (-not $currentSection.Equals($originalSection, [StringComparison]::Ordinal)) {
-                throw "Rollback verification found an unrestored RenoDX ReShade.ini section."
-            }
-        }
-    }
-
-    foreach ($relativePath in @("bin64\ReShade.log", "bin64\ReShadePreset.ini")) {
-        $artifactPath = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot $relativePath)
-        if ((Test-FileAbsentFromBaseline -RelativePath $relativePath) -and
-            (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
-            throw "Rollback verification found a generated ReShade artifact: $relativePath"
-        }
-    }
+    Assert-OwnedConfigRestoration -Manifest $Manifest
 }
 
 function Invoke-Preflight {
@@ -2197,10 +2384,9 @@ function Invoke-ClientScopedRootHandoff {
     if ($oldRoot.Equals($targetRoot, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Root handoff was requested for the same EveJS root."
     }
-    if (-not $targetParent.Equals($oldParent, [StringComparison]::OrdinalIgnoreCase) -or
-        -not $targetWorkspace.Equals($targetParent, [StringComparison]::OrdinalIgnoreCase) -or
+    if (-not $targetWorkspace.Equals($targetParent, [StringComparison]::OrdinalIgnoreCase) -or
         -not $oldWorkspace.Equals($oldParent, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Automatic DLSS5 handoff is allowed only between different immediate sibling EveJS roots."
+        throw "Each EveJS root must belong to its recorded immediate workspace before automatic handoff."
     }
     if (-not $recordedClient.Equals((Get-NormalizedPath $script:ClientRoot), [StringComparison]::OrdinalIgnoreCase) -or
         -not $recordedState.Equals((Get-NormalizedPath $script:StateRoot), [StringComparison]::OrdinalIgnoreCase)) {
@@ -2214,20 +2400,25 @@ function Invoke-ClientScopedRootHandoff {
 
     Write-Step "Handing the shared client from '$oldRoot' to '$targetRoot'"
     try {
+        $script:WorkspaceRoot = $oldWorkspace
         Set-EveJSRootContext -Root $oldRoot
         Assert-WorkspaceLayout
         $installed = Read-ActiveManifest
-        if (-not (Test-ManifestMatchesPayloadMetadata -Manifest $installed -PayloadManifest $payload)) {
-            throw "The old-root receipt does not match the exact client-scoped payload metadata."
-        }
-        Invoke-Verify -PayloadManifest $payload
         Assert-RestoreBackups -Manifest $installed
         if ([string]$installed.status -eq "installed") {
+            if (-not (Test-ManifestMatchesPayloadMetadata -Manifest $installed -PayloadManifest $payload)) {
+                throw "The old-root receipt does not match the exact client-scoped payload metadata."
+            }
+            Invoke-Verify -PayloadManifest $payload
             Invoke-Restore
         } else {
+            # The old payload is gone. Verify the restored originals against
+            # their receipt, not against a different new package's payload.
+            Assert-RecoveryRollbackComplete -Manifest $installed
             Write-Okay "the old-root receipt already proves a complete rollback; no client files were changed"
         }
     } finally {
+        $script:WorkspaceRoot = $targetWorkspace
         Set-EveJSRootContext -Root $targetRoot
     }
 
@@ -2270,6 +2461,12 @@ function Invoke-ClientScopedRootHandoff {
 
 function Invoke-Ensure {
     $candidate = Read-ActiveManifestRaw
+    if ($null -ne $candidate -and $candidate.status -eq 'installed' -and
+        ((Test-HasServerAttachments $candidate) -or
+         -not (Get-NormalizedPath ([string]$candidate.evejsRoot)).Equals($script:EveJSRoot,[StringComparison]::OrdinalIgnoreCase))) {
+        Invoke-EnsureServerAttachment $candidate
+        return
+    }
     if ($null -ne $candidate -and
         $candidate.PSObject.Properties.Name -contains "evejsRoot" -and
         $candidate.evejsRoot -and
@@ -2335,6 +2532,10 @@ function Get-PayloadUpgradeMode {
             # never rewrite an enabled component during journal migration.
             return "AdoptInstalled"
         }
+        if ((Test-Path -LiteralPath $Destination -PathType Leaf) -and
+            (Get-Sha256 $Destination) -eq [string]$Operation.installedSha256) {
+            return 'ReplaceOwned'
+        }
         throw "Payload upgrade stopped: enabled component '$($File.component)' is not already at the exact new payload: $($Operation.destination)"
     }
 
@@ -2354,6 +2555,7 @@ function Get-PayloadUpgradeMode {
 }
 
 function Invoke-UpgradePayload {
+    Assert-NoAttachedPayloadChange
     Assert-NoTargetClientProcess
     Assert-WorkspaceLayout
     $payload = Read-PayloadManifest
@@ -2427,55 +2629,65 @@ function Invoke-UpgradePayload {
         throw "Payload history destination already exists: $archivePath"
     }
     Copy-Item -LiteralPath $activeManifestPath -Destination $archivePath
-    $archiveHash = Get-Sha256 $archivePath
 
-    $now = [DateTime]::UtcNow.ToString("o")
-    $payloadHistory = @()
-    if ($manifest.PSObject.Properties.Name -contains "payloadHistory" -and $manifest.payloadHistory) {
-        $payloadHistory = @($manifest.payloadHistory)
-    }
-    foreach ($change in $changes) {
-        Add-OrSetProperty -Object $change.operation -Name "source" -Value ([string]$change.file.source)
-        Add-OrSetProperty -Object $change.operation -Name "component" -Value ([string]$change.file.component)
-        Add-OrSetProperty -Object $change.operation -Name "installedSha256" -Value ([string]$change.file.sha256)
-        Add-OrSetProperty -Object $change.operation -Name "installedBytes" -Value ([Int64]$change.file.bytes)
-        Add-OrSetProperty -Object $change.operation -Name "applied" -Value ($change.mode -eq "AdoptInstalled")
-        $payloadHistory += [pscustomobject][ordered]@{
-            atUtc = $now
-            destination = [string]$change.operation.destination
-            component = [string]$change.file.component
-            fromSource = $change.oldSource
-            toSource = [string]$change.file.source
-            fromSha256 = $change.oldSha256
-            toSha256 = [string]$change.file.sha256
-            fromBytes = $change.oldBytes
-            toBytes = [Int64]$change.file.bytes
-            reason = if ($change.mode -eq "AdoptInstalled") {
-                "adopted exact already-installed payload without rewriting enabled component"
-            } else {
-                "verified supplemental payload upgrade while component disabled"
-            }
-        }
-        Write-Okay "journaled payload upgrade for $($change.operation.destination)"
-    }
-    Add-OrSetProperty -Object $manifest -Name "integrationVersion" -Value ([string]$payload.integrationVersion)
-    Add-OrSetProperty -Object $manifest -Name "payloadHistory" -Value $payloadHistory
-    Add-OrSetProperty -Object $manifest -Name "payloadUpgradedAtUtc" -Value $now
-
+    $changedOperations = @($changes | Where-Object { $_.mode -eq 'ReplaceOwned' } | ForEach-Object { $_.operation })
+    Start-ProfileTransaction -Manifest $manifest -Operations $changedOperations
     try {
+        $now = [DateTime]::UtcNow.ToString("o")
+        $payloadHistory = @()
+        if ($manifest.PSObject.Properties.Name -contains "payloadHistory" -and $manifest.payloadHistory) {
+            $payloadHistory = @($manifest.payloadHistory)
+        }
+        foreach ($change in $changes) {
+            if ($change.mode -eq 'ReplaceOwned') {
+                $source = Assert-ClientScopedStatePath (Join-Path $script:PayloadRoot ([string]$change.file.source))
+                $target = Assert-OwnedClientPath (Join-Path $script:ClientRoot ([string]$change.operation.destination))
+                Copy-FileAtomic -Source $source -Destination $target -ExpectedSha256 ([string]$change.file.sha256)
+            }
+            Add-OrSetProperty -Object $change.operation -Name "source" -Value ([string]$change.file.source)
+            Add-OrSetProperty -Object $change.operation -Name "component" -Value ([string]$change.file.component)
+            Add-OrSetProperty -Object $change.operation -Name "installedSha256" -Value ([string]$change.file.sha256)
+            Add-OrSetProperty -Object $change.operation -Name "installedBytes" -Value ([Int64]$change.file.bytes)
+            Add-OrSetProperty -Object $change.operation -Name "applied" -Value ($change.mode -in @("AdoptInstalled", "ReplaceOwned"))
+            $payloadHistory += [pscustomobject][ordered]@{
+                atUtc = $now
+                destination = [string]$change.operation.destination
+                component = [string]$change.file.component
+                fromSource = $change.oldSource
+                toSource = [string]$change.file.source
+                fromSha256 = $change.oldSha256
+                toSha256 = [string]$change.file.sha256
+                fromBytes = $change.oldBytes
+                toBytes = [Int64]$change.file.bytes
+                reason = if ($change.mode -in @("AdoptInstalled", "ReplaceOwned")) {
+                    "adopted exact already-installed payload without rewriting enabled component"
+                } else {
+                    "verified supplemental payload upgrade while component disabled"
+                }
+            }
+            Write-Okay "journaled payload upgrade for $($change.operation.destination)"
+        }
+        Add-OrSetProperty -Object $manifest -Name "integrationVersion" -Value ([string]$payload.integrationVersion)
+        Add-OrSetProperty -Object $manifest -Name "payloadHistory" -Value $payloadHistory
+        Add-OrSetProperty -Object $manifest -Name "payloadUpgradedAtUtc" -Value $now
+
         Write-JsonAtomic -Value $manifest -Path $script:ActiveManifestPath
         Invoke-Verify -PayloadManifest $payload
+        Complete-ProfileTransaction
     } catch {
-        $failure = $_.Exception.Message
-        Copy-FileAtomic -Source $archivePath -Destination $script:ActiveManifestPath -ExpectedSha256 $archiveHash
-        throw "Payload upgrade failed; the prior journal was restored: $failure"
+        $failure = $_
+        try { Invoke-RecoverProfileTransaction } catch {
+            Write-WarningLine ("Payload rollback needs recovery: " + $_.Exception.Message)
+        }
+        throw $failure
     }
 
     Write-Host ""
-    Write-Host "Payload journal upgraded safely. Enabled components were adopted only when already byte-identical; no client file was rewritten." -ForegroundColor Green
+    Write-Host "Payload upgrade verified. Original-install backups and operation rollback snapshots were retained." -ForegroundColor Green
 }
 
 function Invoke-ApplyProfile {
+    Assert-NoAttachedPayloadChange
     Assert-NoTargetClientProcess
     Assert-WorkspaceLayout
     $payload = Assert-Payload
@@ -2489,10 +2701,6 @@ function Invoke-ApplyProfile {
     $backupRoot = Get-BackupRoot $manifest
     if (-not (Test-Path -LiteralPath $backupRoot -PathType Container)) {
         throw "Verified backup directory is missing: $backupRoot"
-    }
-    if ((Test-ComponentEnabled -ProfileName $Profile -Component "reshade") -or
-        ($manifest.PSObject.Properties.Name -contains "reshadeConfig" -and $null -ne $manifest.reshadeConfig)) {
-        Initialize-ReShadeConfigTracking -Manifest $manifest
     }
 
     # Refuse unknown drift before changing profiles. A profile transition may
@@ -2521,89 +2729,112 @@ function Invoke-ApplyProfile {
         }
     }
 
-    if (Test-Path -LiteralPath $script:ConfigPath -PathType Leaf) {
-        $configHash = Get-Sha256 $script:ConfigPath
-        $knownConfigHashes = @([string]$manifest.config.originalSha256)
-        if ($manifest.config.installedSha256) {
-            $knownConfigHashes += [string]$manifest.config.installedSha256
+    # The selected assignments are checked by the layout contract; unrelated
+    # batch settings remain user-owned during profile changes.
+    $changedOperations = @($manifest.operations | Where-Object {
+        $target = Assert-OwnedClientPath (Join-Path $script:ClientRoot ([string]$_.destination))
+        $exists = Test-Path -LiteralPath $target -PathType Leaf
+        $enabled = Test-ComponentEnabled -ProfileName $Profile -Component ([string]$_.component)
+        if ($enabled) { -not $exists -or (Get-Sha256 $target) -ne [string]$_.installedSha256 }
+        elseif ($_.kind -eq 'replace') { (Get-Sha256 $target) -ne [string]$_.originalSha256 }
+        else { $exists }
+    })
+    Start-ProfileTransaction -Manifest $manifest -Operations $changedOperations
+    try {
+        if ((Test-ComponentEnabled -ProfileName $Profile -Component "reshade") -or
+            ($manifest.PSObject.Properties.Name -contains "reshadeConfig" -and $null -ne $manifest.reshadeConfig)) {
+            Initialize-ReShadeConfigTracking -Manifest $manifest
         }
-        if ($configHash -notin $knownConfigHashes) {
-            throw "Profile transition stopped because EvEJSConfig.bat changed after installation."
-        }
-    }
-
-    Write-Step "Applying component profile '$Profile'"
-    foreach ($operation in @($manifest.operations)) {
-        $enabled = Test-ComponentEnabled -ProfileName $Profile -Component ([string]$operation.component)
-        $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
-        if ($enabled) {
-            $source = Assert-ClientScopedStatePath -Path (Join-Path $script:PayloadRoot ([string]$operation.source))
-            if (-not (Test-Path -LiteralPath $destination -PathType Leaf) -or
-                (Get-Sha256 $destination) -ne [string]$operation.installedSha256) {
-                Copy-FileAtomic -Source $source -Destination $destination -ExpectedSha256 ([string]$operation.installedSha256)
-                Write-Okay "enabled $($operation.destination)"
+        Write-Step "Applying component profile '$Profile'"
+        foreach ($operation in @($manifest.operations)) {
+            $enabled = Test-ComponentEnabled -ProfileName $Profile -Component ([string]$operation.component)
+            $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
+            if ($enabled) {
+                $source = Assert-ClientScopedStatePath -Path (Join-Path $script:PayloadRoot ([string]$operation.source))
+                if (-not (Test-Path -LiteralPath $destination -PathType Leaf) -or
+                    (Get-Sha256 $destination) -ne [string]$operation.installedSha256) {
+                    Copy-FileAtomic -Source $source -Destination $destination -ExpectedSha256 ([string]$operation.installedSha256)
+                    Write-Okay "enabled $($operation.destination)"
+                }
+                Add-OrSetProperty -Object $operation -Name "applied" -Value $true
+            } elseif ($operation.kind -eq "replace") {
+                if ((Get-Sha256 $destination) -ne [string]$operation.originalSha256) {
+                    $backup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$operation.backup))
+                    Copy-FileAtomic -Source $backup -Destination $destination -ExpectedSha256 ([string]$operation.originalSha256)
+                    Write-Okay "restored original $($operation.destination)"
+                }
+                Add-OrSetProperty -Object $operation -Name "applied" -Value $false
+            } elseif (Test-Path -LiteralPath $destination -PathType Leaf) {
+                Register-ProfileTransactionMutation -Path $destination
+                Remove-Item -LiteralPath $destination -Force
+                Write-Okay "disabled $($operation.destination)"
+                Add-OrSetProperty -Object $operation -Name "applied" -Value $false
+            } else {
+                Add-OrSetProperty -Object $operation -Name "applied" -Value $false
             }
-            Add-OrSetProperty -Object $operation -Name "applied" -Value $true
-        } elseif ($operation.kind -eq "replace") {
-            if ((Get-Sha256 $destination) -ne [string]$operation.originalSha256) {
-                $backup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$operation.backup))
-                Copy-FileAtomic -Source $backup -Destination $destination -ExpectedSha256 ([string]$operation.originalSha256)
-                Write-Okay "restored original $($operation.destination)"
-            }
-            Add-OrSetProperty -Object $operation -Name "applied" -Value $false
-        } elseif (Test-Path -LiteralPath $destination -PathType Leaf) {
-            Remove-Item -LiteralPath $destination -Force
-            Write-Okay "disabled $($operation.destination)"
-            Add-OrSetProperty -Object $operation -Name "applied" -Value $false
-        } else {
-            Add-OrSetProperty -Object $operation -Name "applied" -Value $false
         }
+
+        # Configure only the three INI keys owned by this integration after the
+        # matching ReShade/RenoDX binaries are in place. All unrelated ReShade
+        # settings remain user-owned and are preserved byte-for-byte where
+        # possible.
+        Set-ReShadeConfigForProfile -Manifest $manifest -ProfileName $Profile
+
+        # Keep the copied client selected and DX12 active in every diagnostic
+        # profile. Full uninstall is the separate Restore action.
+        $configText = Get-UpdatedEveJSConfigText
+        Write-TextAtomic -Text $configText -Path $script:ConfigPath
+        $manifest.config.installedSha256 = Get-Sha256 $script:ConfigPath
+        $manifest.config.applied = $true
+
+        $now = [DateTime]::UtcNow.ToString("o")
+        $history = @()
+        if ($manifest.PSObject.Properties.Name -contains "profileHistory" -and $manifest.profileHistory) {
+            $history = @($manifest.profileHistory)
+        }
+        $history += [pscustomobject][ordered]@{
+            atUtc = $now
+            from = $currentProfile
+            to = $Profile
+            reason = "component A/B transition"
+        }
+        Add-OrSetProperty -Object $manifest -Name "profileHistory" -Value $history
+        Add-OrSetProperty -Object $manifest -Name "profile" -Value $Profile
+        Add-OrSetProperty -Object $manifest -Name "profileAppliedAtUtc" -Value $now
+        $manifest.status = "installed"
+        Write-JsonAtomic -Value $manifest -Path $script:ActiveManifestPath
+
+        Invoke-Verify -PayloadManifest $payload
+        Complete-ProfileTransaction
+    } catch {
+        $failure = $_
+        try { Invoke-RecoverProfileTransaction } catch {
+            Write-WarningLine ("Profile rollback needs recovery: " + $_.Exception.Message)
+        }
+        throw $failure
     }
-
-    # Configure only the two INI keys owned by this integration after the
-    # matching ReShade/RenoDX binaries are in place. All unrelated ReShade
-    # settings remain user-owned and are preserved byte-for-byte where
-    # possible.
-    Set-ReShadeConfigForProfile -Manifest $manifest -ProfileName $Profile
-
-    # Keep the copied client selected and DX12 active in every diagnostic
-    # profile. Full uninstall is the separate Restore action.
-    $configText = Get-UpdatedEveJSConfigText
-    Write-TextAtomic -Text $configText -Path $script:ConfigPath
-    $manifest.config.installedSha256 = Get-Sha256 $script:ConfigPath
-    $manifest.config.applied = $true
-
-    $now = [DateTime]::UtcNow.ToString("o")
-    $history = @()
-    if ($manifest.PSObject.Properties.Name -contains "profileHistory" -and $manifest.profileHistory) {
-        $history = @($manifest.profileHistory)
-    }
-    $history += [pscustomobject][ordered]@{
-        atUtc = $now
-        from = $currentProfile
-        to = $Profile
-        reason = "component A/B transition"
-    }
-    Add-OrSetProperty -Object $manifest -Name "profileHistory" -Value $history
-    Add-OrSetProperty -Object $manifest -Name "profile" -Value $Profile
-    Add-OrSetProperty -Object $manifest -Name "profileAppliedAtUtc" -Value $now
-    $manifest.status = "installed"
-    Write-JsonAtomic -Value $manifest -Path $script:ActiveManifestPath
-
-    Invoke-Verify -PayloadManifest $payload
     Write-Host ""
     Write-Host "Profile '$Profile' is staged. Launch only through this EveJS copy for its control test." -ForegroundColor Green
 }
 
 function Invoke-Verify {
-    param($PayloadManifest = $null)
+    param($PayloadManifest = $null,[switch]$ClientOnly)
 
-    Assert-WorkspaceLayout
+    if (-not $ClientOnly) {
+        $candidate=Read-ActiveManifestRaw
+        if (Test-HasServerAttachments $candidate) {
+            if ($candidate.status -eq 'installed') { Invoke-VerifyServerAttachment $candidate }
+            else { Invoke-InRecordedServerContext ([string]$candidate.evejsRoot) ([string]$candidate.workspaceRoot) { Invoke-Verify -PayloadManifest $PayloadManifest -ClientOnly } }
+            return
+        }
+    }
+
     $manifest = Read-ActiveManifest
     if ($null -eq $manifest -or $manifest.status -notin @("installed", "restored", "rolledBack")) {
         throw "There is no completed DLSS5 installation or rollback to verify."
     }
     if ($manifest.status -in @("restored", "rolledBack")) {
+        Assert-ClientRecoveryLayout
         Write-Step "Verifying complete DLSS5 rollback"
         foreach ($operation in @($manifest.operations)) {
             $destination = Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot ([string]$operation.destination))
@@ -2621,40 +2852,15 @@ function Invoke-Verify {
         if ($exeHash -ne [string]$manifest.executable.sha256 -or $exeHash -ne $script:ExpectedExeSha256) {
             throw "exefile.exe changed unexpectedly during rollback."
         }
-        if ((Get-Sha256 $script:ConfigPath) -ne [string]$manifest.config.originalSha256) {
-            throw "EvEJSConfig.bat was not restored to its pre-install hash."
-        }
-
-        if ($manifest.PSObject.Properties.Name -contains "reshadeConfig" -and $null -ne $manifest.reshadeConfig) {
-            $configExists = Test-Path -LiteralPath $script:ReShadeConfigPath -PathType Leaf
-            if (-not [bool]$manifest.reshadeConfig.originalExists -and $configExists) {
-                throw "Generated ReShade.ini remains after rollback."
-            }
-            if ([bool]$manifest.reshadeConfig.originalExists) {
-                if (-not $configExists) { throw "Pre-existing ReShade.ini is missing after rollback." }
-                $backup = Assert-ClientScopedStatePath -Path (Join-Path (Get-BackupRoot $manifest) ([string]$manifest.reshadeConfig.backup))
-                $currentSection = Get-IniSectionText -Text ([IO.File]::ReadAllText($script:ReShadeConfigPath)) -Section "RenoDX.DLSS5"
-                $originalSection = Get-IniSectionText -Text ([IO.File]::ReadAllText($backup)) -Section "RenoDX.DLSS5"
-                if (-not $currentSection.Equals($originalSection, [StringComparison]::Ordinal)) {
-                    throw "The original RenoDX ReShade.ini section was not restored."
-                }
-            }
-        }
-
-        foreach ($relativePath in @("bin64\ReShade.log", "bin64\ReShadePreset.ini")) {
-            if ((Test-FileAbsentFromBaseline -RelativePath $relativePath) -and
-                (Test-Path -LiteralPath (Assert-OwnedClientPath -Path (Join-Path $script:ClientRoot $relativePath)) -PathType Leaf)) {
-                throw "Generated ReShade artifact remains after rollback: $relativePath"
-            }
-        }
+        Assert-OwnedConfigRestoration -Manifest $manifest
+        Write-Okay 'Owned configuration keys were restored; unowned settings and later edits are preserved.'
 
         Write-Okay "every replaced file matches its original hash and every added file is absent"
         Write-Okay "exefile.exe is unchanged: $exeHash"
-        Write-Okay "EvEJSConfig.bat is restored to its pre-install hash"
-        Write-Okay "generated ReShade configuration and logs are absent or restored"
         return
     }
 
+    if ($ClientOnly) { Assert-ClientRecoveryLayout } else { Assert-WorkspaceLayout }
     # Installed-state verification checks client bytes against the reviewed
     # manifest and receipt. It never needs to download or recreate the cache.
     $payload = if ($null -eq $PayloadManifest) { Read-PayloadManifest } else { $PayloadManifest }
@@ -2690,15 +2896,15 @@ function Invoke-Verify {
         throw "exefile.exe changed unexpectedly."
     }
 
-    $configHash = Get-Sha256 $script:ConfigPath
-    if ($configHash -ne [string]$manifest.config.installedSha256) {
-        throw "EvEJSConfig.bat changed after installation."
-    }
+    # Only these four assignments belong to this attachment. Unrelated batch
+    # edits do not invalidate the selected client or renderer configuration.
+    if (-not $ClientOnly) {
     $configText = [IO.File]::ReadAllText($script:ConfigPath)
     Assert-ExactBatchSettingValue -Text $configText -Name "EVEJS_CLIENT_PATH" -ExpectedValue $script:ClientRoot
     Assert-ExactBatchSettingValue -Text $configText -Name "EVEJS_CLIENT_EXE" -ExpectedValue "bin64\exefile.exe"
     Assert-ExactBatchSettingValue -Text $configText -Name "TRINITYPLATFORM" -ExpectedValue "dx12"
     Assert-ExactBatchSettingValue -Text $configText -Name "EVEJS_DLSS5" -ExpectedValue "on"
+    }
 
     if (Test-ComponentEnabled -ProfileName $currentProfile -Component "reshade") {
         $reshade = Assert-OwnedClientPath -Path (Join-Path $script:BinRoot "dxgi.dll")
@@ -2710,8 +2916,10 @@ function Invoke-Verify {
 
     Write-Okay "$enabledCount payload files enabled; every disabled file is restored or absent"
     Write-Okay "exefile.exe is unchanged: $exeHash"
-    Write-Okay "EveJS points only at the copied tq client"
-    Write-Okay "TRINITYPLATFORM=dx12 is enabled"
+    if (-not $ClientOnly) {
+        Write-Okay "EveJS points only at the copied tq client"
+        Write-Okay "TRINITYPLATFORM=dx12 is enabled"
+    } else { Write-Okay 'Physical client verified independently of server launch attachments.' }
     if (Test-ComponentEnabled -ProfileName $currentProfile -Component "reshade") {
         Write-Okay "ReShade Addon loader marker is present"
     } else {
@@ -2725,7 +2933,18 @@ function Invoke-RuntimeCheck {
     )
 
     Assert-WorkspaceLayout
-    $manifest = Read-ActiveManifest
+    if ($ReShadeBasePath) {
+        $runtimeBase = Get-NormalizedPath $ReShadeBasePath
+        Assert-NoReparsePointsInExistingPath -Path $runtimeBase -BoundaryName 'runtime ReShade profile' | Out-Null
+        $script:ReShadeLogPath = Join-Path $runtimeBase 'ReShade.log'
+        Assert-NoReparsePointsInExistingPath -Path $script:ReShadeLogPath -BoundaryName 'runtime ReShade log' | Out-Null
+    }
+    $manifest = Read-ActiveManifestRaw
+    if (Test-HasServerAttachments $manifest) {
+        Assert-ServerAttachments $manifest
+        $attachment=Get-ServerAttachment $manifest $script:EveJSRoot
+        if ($null -eq $attachment -or $attachment.status -ne 'attached') { throw 'The selected server is not attached to this runtime.' }
+    } else { $manifest=Read-ActiveManifest }
     if ($null -eq $manifest -or $manifest.status -ne "installed") {
         throw "There is no staged profile to inspect."
     }
@@ -2894,31 +3113,30 @@ function Test-RestoreDrift {
             $problems.Add("changed since install: $($operation.destination)")
         }
     }
-    if ((Test-Path -LiteralPath $script:ConfigPath -PathType Leaf) -and $Manifest.config.installedSha256) {
-        $configHash = Get-Sha256 $script:ConfigPath
-        if ($configHash -notin @([string]$Manifest.config.originalSha256, [string]$Manifest.config.installedSha256)) {
-            $problems.Add("changed since install: EvEJSConfig.bat")
-        }
-    }
     if ($problems.Count -gt 0 -and -not $AllowDrift) {
         throw ("Restore stopped to avoid overwriting newer changes. Re-run with -Force only if intended:`n  - " + ($problems -join "`n  - "))
     }
 }
 
 function Invoke-Restore {
+    param([switch]$PhysicalOnly)
+    if (-not $PhysicalOnly) {
+        $candidate=Read-ActiveManifestRaw
+        if (Test-HasServerAttachments $candidate) {
+            if ($candidate.status -eq 'installed') { Invoke-DetachServerAttachment $candidate }
+            else { Invoke-InRecordedServerContext ([string]$candidate.evejsRoot) ([string]$candidate.workspaceRoot) { Invoke-Restore -PhysicalOnly } }
+            return
+        }
+    }
     Assert-NoTargetClientProcess
-    Assert-WorkspaceLayout
+    Assert-ClientRecoveryLayout
     $manifest = Read-ActiveManifest
     if ($null -eq $manifest) {
         throw "No DLSS5 install journal exists."
     }
     if ($manifest.status -in @("restored", "rolledBack")) {
-        # Re-run generated-artifact cleanup so an interrupted or older
-        # uninstaller can be repaired idempotently without touching originals.
-        Restore-ReShadeConfig -Manifest $manifest
-        Write-JsonAtomic -Value $manifest -Path $script:ActiveManifestPath
         Invoke-Verify
-        Write-Okay "the integration was already restored; rollback residue check is clean"
+        Write-Okay 'The integration was already restored; no cleanup was repeated.'
         return
     }
 
@@ -2944,7 +3162,7 @@ function Invoke-Restore {
         }
     }
     Restore-ReShadeConfig -Manifest $manifest
-    Copy-FileAtomic -Source $configBackup -Destination $script:ConfigPath -ExpectedSha256 ([string]$manifest.config.originalSha256)
+    if (-not (Test-PrimaryServerDetached $manifest)) { Restore-OwnedBatchSettings -Manifest $manifest }
 
     if ((Get-Sha256 $script:ExePath) -ne [string]$manifest.executable.sha256) {
         throw "exefile.exe no longer matches the recorded baseline after restore."
@@ -2963,7 +3181,13 @@ function Invoke-Status {
     Write-Host "  Workspace : $script:WorkspaceRoot"
     Write-Host "  EveJS root: $script:EveJSRoot"
     Write-Host "  Client    : $script:ClientRoot"
-    $manifest = Read-ActiveManifest
+    $manifest = Read-ActiveManifestRaw
+    if (Test-HasServerAttachments $manifest) {
+        Assert-ServerAttachments $manifest
+        $attachment=Get-ServerAttachment $manifest $script:EveJSRoot
+        $attachmentState=if ($null -ne $attachment) { [string]$attachment.status } else { 'not attached' }
+        Write-Host "  Attachment: $attachmentState"
+    } else { $manifest=Read-ActiveManifest }
     if ($null -eq $manifest) {
         Write-Host "  Status    : not installed" -ForegroundColor Yellow
         return
@@ -2981,6 +3205,7 @@ function Invoke-Status {
 $managerMutex = $null
 $ownsManagerMutex = $false
 try {
+    if ($Action -notin @('Restore', 'Recover', 'Status')) {
     if (-not (Test-Path -LiteralPath $script:PublicPayloadHelperPath -PathType Leaf)) {
         throw "The reviewed public payload helper is missing: $script:PublicPayloadHelperPath"
     }
@@ -2993,6 +3218,7 @@ try {
         throw "The public payload helper is not the exact reviewed implementation. Expected $script:ExpectedPublicPayloadHelperSha256, got $helperHash"
     }
     . $script:PublicPayloadHelperPath
+    }
 
     if ($Action -notin @('Status', 'Runtime')) {
         $lockPath = (Get-PhysicalPath $script:ClientRoot).ToUpperInvariant()
@@ -3015,6 +3241,9 @@ try {
             throw 'Another DLSS5 manager is still preparing this client. Wait for it to finish, then retry.'
         }
     }
+    if ($Action -notin @('Recover', 'Status', 'Runtime') -and (Test-Path -LiteralPath $script:PendingTransactionPath)) {
+        throw 'An interrupted profile transaction needs -Action Recover before this operation.'
+    }
     switch ($Action) {
         "Status" { Invoke-Status }
         "Preflight" { Invoke-Preflight | Out-Null }
@@ -3023,8 +3252,10 @@ try {
         "UpgradePayload" { Invoke-UpgradePayload }
         "ApplyProfile" { Invoke-ApplyProfile }
         "Verify" { Invoke-Verify }
+        "VerifyClient" { Invoke-Verify -ClientOnly }
         "Runtime" { Invoke-RuntimeCheck -RequestedProcessId $ProcessId }
         "Restore" { Invoke-Restore }
+        "Recover" { Invoke-RecoverProfileTransaction; Invoke-RecoverServerAttachments }
     }
 } catch {
     Write-Host ""

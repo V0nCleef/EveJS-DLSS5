@@ -1,6 +1,6 @@
 {
   "schemaVersion": 5,
-  "integrationVersion": "0.5.6",
+  "integrationVersion": "0.5.8",
   "clientBuild": 3396210,
   "artifacts": [
     {
@@ -51,13 +51,13 @@
     }
   ],
   "generator": {
-    "id": "evejs-code-ccp-v12-local-source-v1",
+    "id": "evejs-code-ccp-v13-local-source-v1",
     "archiveEntry": "eve/client/script/ui/shared/systemMenu/systemmenu.pyj",
     "embeddedFilename": "eve/client/script/ui/shared/systemMenu/systemmenu.py",
     "originalPycBytes": 135368,
     "originalPycSha256": "15DFB23A19F1972D4B2802A86116E9FB53B3850672679461456F1AC00FE33625",
-    "patchedPycBytes": 127041,
-    "patchedPycSha256": "BCE3BE9AB397953245C8FA30002AB4AD0468FFE0EBD0F998452D0314D2C8B188",
+    "patchedPycBytes": 127666,
+    "patchedPycSha256": "9F9A0DDB75D0576B51826421C0275AEEBC5D01B44AF4EA8DBC2ED849C89C2308",
     "pythonRuntime": {
       "path": "bin64\\python27.dll",
       "bytes": 3567760,
@@ -85,37 +85,43 @@
       {
         "id": "builder",
         "path": "client-patches\\tools\\build_code_ccp.py",
-        "bytes": 12191,
-        "sha256": "E80FF90D14146EBA95086E65AF521116AE0DDCB850A133A3CE0F1B5C2B4261DB"
+        "bytes": 12723,
+        "sha256": "D31C872EA4D44E07789658E2D93C3DCA2FAF8854B91A9CE8A571C3A2F820F91D"
       },
       {
         "id": "graphics-template",
         "path": "client-patches\\templates\\systemmenu_apply_graphics.py.in",
-        "bytes": 17954,
-        "sha256": "240B379994A42374C41F7875A8783D4FA6237194833C37F54C3C9C1F02B70F38"
+        "bytes": 11209,
+        "sha256": "E94DCD476660F9299C22B0B2A84687453C7C3A921239634308CA18606A763326"
       },
       {
         "id": "startup-template",
         "path": "client-patches\\templates\\device_create.py.in",
-        "bytes": 11703,
-        "sha256": "4A00A98FC65997E7996F665BA5DBEC85923DDA16CBD84C458F26F0663FC709D7"
+        "bytes": 3631,
+        "sha256": "4CAAF43F262D4D87A922A67F23329D91235946894672AB387F4120BFF0710C40"
       },
       {
         "id": "local-source",
         "path": "client-patches\\tools\\local_source.py",
-        "bytes": 21812,
-        "sha256": "BD070ED7047613C14FD8C961A7B2447921AB9F2ED0C769B98D555ECDBD579A99"
+        "bytes": 22010,
+        "sha256": "32CECE52FE521A6B7F301B861376DEFBE33AF6887931ACBBFEDE6E89FBCA55DC"
       },
       {
         "id": "reconstruct",
         "path": "client-patches\\tools\\reconstruct.py",
-        "bytes": 6440,
-        "sha256": "585E32DD92A636F90C76CCD772767D0ECEAB34F2DBB6812D7B8D68A127223EFE"
+        "bytes": 6502,
+        "sha256": "12ABB9F7EA33DF260C61CC1CF28E6A671683B39191ED7FD2E17EBB1C645D19A4"
+      },
+      {
+        "id": "native-bridge",
+        "path": "client-patches\\templates\\native_nr_bridge.py.in",
+        "bytes": 8424,
+        "sha256": "BFCA54FF9005142B8A17E000A1F464C1FC4221092AA108A112DF29D7949B619E"
       }
     ],
     "intermediateArchive": {
-      "bytes": 30760389,
-      "sha256": "41A380AEF24D7304F595C7F4DBF93B5BD45D2F42A343E6DACD1C0096526A1FB1"
+      "bytes": 30760794,
+      "sha256": "65A3396C7B7A06E4A2BFE93AA6601600CE67F6D3E3232F7FEF323D6EB43C6E1D"
     },
     "startupPatch": {
       "archiveEntry": "carbonui/services/device.pyj",
@@ -124,8 +130,8 @@
       "methodName": "CreateDevice",
       "originalPycBytes": 27911,
       "originalPycSha256": "924F5050A7476845B8DBBB4CC96032A14C7773FF18373D707B605A75821A6F61",
-      "patchedPycBytes": 30723,
-      "patchedPycSha256": "C0F26D50BFB11AF910F67E3CC365EAFC82A275FAEF060926ED2FD1F7F859E409"
+      "patchedPycBytes": 30421,
+      "patchedPycSha256": "58C9422BE7D76463EA749275B5459D380D49D473860D62A8DE55562064365E16"
     }
   },
   "files": [
@@ -198,10 +204,10 @@
       "destination": "code.ccp",
       "component": "clientGuard",
       "sourceKind": "generated",
-      "generatorId": "evejs-code-ccp-v12-local-source-v1",
-      "bytes": 30763542,
-      "sha256": "BC8DD57471B376D3CC37A1908CEE64174E98EDB6D3D94B9F04437BDCE33686CC",
-      "version": "EveJS client 3396210 / DLSS5 process-local startup and transition guard V12 candidate",
+      "generatorId": "evejs-code-ccp-v13-local-source-v1",
+      "bytes": 30763862,
+      "sha256": "AE38722C9053B243343838A0CF98218592BF415497580B6358A02CA0FE1B41F4",
+      "version": "EveJS client 3396210 / DLSS5 process-local startup and transition guard V13 candidate",
       "licenseId": "local-client-compatibility-patch",
       "requiredOriginalBytes": 30757025,
       "requiredOriginalSha256": "89696509EFDC1B081F7371B40CA3D459059DB0E43B5DB328FE373C0F2A9B1A86"

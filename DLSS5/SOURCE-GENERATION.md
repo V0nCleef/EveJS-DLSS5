@@ -1,69 +1,46 @@
-# Local source generation - 0.5.7 package / 0.5.6 payload
+# Local source generation — 0.5.8 / V13 candidate
 
-The 0.5.7 package retains the exact 0.5.6 payload manifest, source helpers,
-templates, runner, native DLL and generated V12 runtime. It changes only the
-manager's read-only validation of the documented `NeuralUplift` runtime Boolean.
-The client receipt therefore remains integration version 0.5.6 and no renderer
-payload migration is performed. The exact 0.5.7 package and matching launcher
-1.0.52 were manually accepted before publication on 2026-09-05.
+Package and integration payload version are both **0.5.8**. The generated client
+guard changed; calling this the unchanged 0.5.6 payload would be incorrect.
+The bundled ReShade 6.8.0.10/EveJS V11 DLL, RenoDX and NVIDIA inputs are unchanged.
+No native DLL source/binary was rebuilt or manually patched for this candidate.
 
-This packaging candidate replaces the two distributed adapted-client method
-bodies with source-only templates and a narrow, data-only Python 2.7 emitter.
-Only the exact supported client archive is accepted. The emitter derives names,
-literals, calls, expressions and statement/control-flow regions from local code
-objects. Unsupported shapes, offsets, markers and line slots fail closed.
+Only the exact supported client archive is accepted. The narrow Python 2.7
+emitter derives local names, literals and control-flow fragments from code
+objects as data. Unsupported code shapes and input hashes are rejected.
+Original or reconstructed client modules are never imported or executed during
+this build. The existing pinned Python runtime compiles the authenticated
+source templates into replacement code objects.
 
-No original/generated game module or method executes during generation. The
-existing pinned local Python runtime runs the authenticated authored builder.
-That builder authenticates all helper/template bytes before either helper runs,
-loads the emitter and reconstruction source into separate private namespaces,
-and compiles the locally completed templates as data. No filesystem helper
-imports, package initializers, cached .pyc files, installed decompiler, or new
-third-party Python dependency is needed.
+`native_nr_bridge.py.in` is now the single authored copy of the common bridge,
+state-query, acknowledgement and toggle helpers. The builder authenticates it
+alongside both templates and expands it in memory. The process-owned HWND,
+foreground physical F6, synthetic local F6, epoch and destruction guards remain.
+Block markers are unique and their reserved source-slot counts are checked;
+author changes no longer require duplicated absolute template line numbers.
 
-The production manager checks the raw manifest, helper, runner/builder sources,
-executable, templates and local derivation helpers. Generator inventory is exact;
-extra files/directories and reparse points are rejected. Checks also run for
-cached payloads and immediately before each of the two generation stages.
-
-## Runtime identity
-
-The source pipeline must generate these unchanged outputs before installation:
+## Generated identity
 
 | Output | Bytes | SHA-256 |
 | --- | ---: | --- |
-| Graphics stage | 30,760,389 | `41A380AEF24D7304F595C7F4DBF93B5BD45D2F42A343E6DACD1C0096526A1FB1` |
-| Final V12 archive | 30,763,542 | `BC8DD57471B376D3CC37A1908CEE64174E98EDB6D3D94B9F04437BDCE33686CC` |
+| Original archive | 30,757,025 | `89696509EFDC1B081F7371B40CA3D459059DB0E43B5DB328FE373C0F2A9B1A86` |
+| Graphics stage | 30,760,790 | `26E9DD79F78A5CC25C08FFE37EC2689FE646F4745D16C212E8023D51A85A115F` |
+| Complete V13 candidate | 30,763,842 | `0DACCC88471E23A068E08B6191126C27B303470D9BE77AD6DFEF1BB6EDD28275` |
 
-The final hash pins compiled nested methods, closure layout, line metadata,
-marshal representation and archive compression, not merely equivalent-looking
-source. Unrelated archive entries and the original executable remain unchanged.
-The ReShade DLL, downloaded runtime components, F6 isolation, NR intent and
-transition timings are unchanged from 0.5.4.
+All 12,527 archive entry names/order were retained; exactly the graphics and
+startup entries changed. The manifest records both new PYC identities and all
+eight generator asset hashes. The generator authenticates all authored inputs
+before evaluation, reuses computed digests and closes its file handles.
 
-## Source boundary and limits
+## Verification boundary
 
-Local regions include the original device creation body and the retained/mixed
-graphics setup, settings application, renderer calls, readiness expressions,
-panel refresh, event emission, window guard and crash-key expression. The
-templates retain authored lifecycle/transition/NR policy, not encoded stock
-method bodies. Startup template lines 170 and 181 use matching device API
-expressions in authored startup policy; these small integration expressions
-are documented rather than silently claimed to have been locally substituted.
+The isolated build used copies of the pinned original code.ccp and Python DLL.
+Template tests model state sequences, physical F6, renderer readiness, retries
+and startup scheduling. Installer tests use disposable files and mocked process
+or network results. These establish source/data and control-flow behavior;
+**they do not establish live GPU rendering, client stability, or release
+acceptance**. Complete `RELEASE-CHECKLIST.md` before publishing.
 
-The templates and emitter are not a general decompiler and do not support
-arbitrary newer client builds. No original or patched archive/PYC, local Python
-DLL, private reconstructed source, prototype outputs or downloaded NVIDIA/RenoDX
-binaries ship in the distribution. Developer tests are excluded too.
-
-Original project contributions are MIT licensed under LICENSE, with the scope
-and third-party exclusions in LICENSING.md. The user's client implementation,
-generated mixed client methods and third-party components are not relicensed.
-Local derivation is not legal clearance or a grant of client modification or
-redistribution rights. Source/rights uncertainty and component terms remain
-separate publication considerations.
-
-Every changed package or launcher requires fresh manual testing of the exact
-new artifacts before publication, even when runtime bytes are identical. The
-scope is agreed with the user; no automatic full graphics matrix is imposed.
-A successful test alone does not authorize commit, tagging, upload or release.
+The package contains no generated code.ccp, client source/module dump or copied
+Python DLL. The original-install backups remain mandatory for restoring replaced
+shared binaries; ordinary private settings use the public contribution contract.

@@ -17,6 +17,7 @@ $manifestPath = Join-Path $sourceRoot 'payload-manifest.json'
 $script:TestCount = 0
 $script:Failures = New-Object 'System.Collections.Generic.List[string]'
 $script:Utf8NoBom = New-Object Text.UTF8Encoding($false)
+$script:ProfileTransaction = $null
 $originalTls = [Net.ServicePointManager]::SecurityProtocol
 
 function Get-TestFunctions {
@@ -40,7 +41,7 @@ function Get-TestFunctions {
 # Only named function definitions are loaded. In particular, none of the
 # manager's parameter initialization, install dispatch, or restore code runs.
 . ([scriptblock]::Create((Get-TestFunctions -Path $managerPath -Names @(
-    'Get-Sha256', 'Get-NormalizedPath', 'Assert-PathInsideRoot', 'Move-StagedFileIntoPlace'
+    'Get-Sha256', 'Get-NormalizedPath', 'Assert-PathInsideRoot', 'Move-StagedFileIntoPlace', 'Register-ProfileTransactionMutation'
 )) -join "`n"))
 . $helperPath
 . ([scriptblock]::Create((Get-TestFunctions -Path $standalonePath -Names @(

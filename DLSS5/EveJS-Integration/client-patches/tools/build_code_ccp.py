@@ -18,6 +18,11 @@ def sha256(data):
     return _sha256.sha256(data).hexdigest().upper()
 
 
+def read_bytes(path):
+    with open(path, 'rb') as source:
+        return source.read()
+
+
 def u16(data, offset):
     return _struct.unpack('<H', str(data[offset:offset + 2]))[0]
 
@@ -46,10 +51,11 @@ def utf8_path(value):
 def load_local_reconstruction(template_path, class_name, method_name):
     patches_path = utf8_path(sys.argv[0]).rsplit(u'\\', 2)[0]
     records = (
-        ('local-source', u'tools\\local_source.py', 21812, 'BD070ED7047613C14FD8C961A7B2447921AB9F2ED0C769B98D555ECDBD579A99'),
-        ('reconstruct', u'tools\\reconstruct.py', 6440, '585E32DD92A636F90C76CCD772767D0ECEAB34F2DBB6812D7B8D68A127223EFE'),
-        ('graphics-template', u'templates\\systemmenu_apply_graphics.py.in', 17954, '240B379994A42374C41F7875A8783D4FA6237194833C37F54C3C9C1F02B70F38'),
-        ('startup-template', u'templates\\device_create.py.in', 11703, '4A00A98FC65997E7996F665BA5DBEC85923DDA16CBD84C458F26F0663FC709D7'),
+        ('local-source', u'tools\\local_source.py', 22010, '32CECE52FE521A6B7F301B861376DEFBE33AF6887931ACBBFEDE6E89FBCA55DC'),
+        ('reconstruct', u'tools\\reconstruct.py', 6502, '12ABB9F7EA33DF260C61CC1CF28E6A671683B39191ED7FD2E17EBB1C645D19A4'),
+        ('graphics-template', u'templates\\systemmenu_apply_graphics.py.in', 11209, 'E94DCD476660F9299C22B0B2A84687453C7C3A921239634308CA18606A763326'),
+        ('startup-template', u'templates\\device_create.py.in', 3631, '4CAAF43F262D4D87A922A67F23329D91235946894672AB387F4120BFF0710C40'),
+        ('native-bridge', u'templates\\native_nr_bridge.py.in', 8424, 'BFCA54FF9005142B8A17E000A1F464C1FC4221092AA108A112DF29D7949B619E'),
     )
     verified = {}
     paths = {}
@@ -57,7 +63,7 @@ def load_local_reconstruction(template_path, class_name, method_name):
     # verified bytes in memory so a later file replacement cannot be loaded.
     for name, relative, size, expected_hash in records:
         path = patches_path + u'\\' + relative
-        source = open(path, 'rb').read()
+        source = read_bytes(path)
         if len(source) != size or sha256(source) != expected_hash:
             fail('local source input identity mismatch: %s' % name)
         verified[name] = source
@@ -73,7 +79,12 @@ def load_local_reconstruction(template_path, class_name, method_name):
         'render_lines': emitter_scope['render_lines'],
     }
     eval(compile(verified['reconstruct'], '<evejs-verified-reconstruct>', 'exec'), reconstruction_scope)
-    return reconstruction_scope['reconstruct'], reconstruction_scope['ORIGINAL_PYC_HASHES'], verified[template_name]
+    template = verified[template_name]
+    marker = '        @SHARED:native_nr_bridge@'
+    if template.count(marker) != 1:
+        fail('missing or duplicate shared native bridge marker')
+    template = template.replace(marker, verified['native-bridge'].rstrip('\n'))
+    return reconstruction_scope['reconstruct'], reconstruction_scope['ORIGINAL_PYC_HASHES'], template
 
 
 def is_code(value):
@@ -136,9 +147,10 @@ allowed_targets = {
 if allowed_targets.get((class_name, method_name)) != entry_name:
     fail('unsupported class/method/archive entry combination')
 
-archive = open(archive_path, 'rb').read()
-if sha256(archive) != expected_input_hash:
-    fail('unsupported input archive SHA-256: %s' % sha256(archive))
+archive = read_bytes(archive_path)
+input_hash = sha256(archive)
+if input_hash != expected_input_hash:
+    fail('unsupported input archive SHA-256: %s' % input_hash)
 
 eocd_offset = len(archive) - 22
 if eocd_offset < 0 or archive[eocd_offset:eocd_offset + 4] != 'PK\x05\x06':
@@ -258,7 +270,9 @@ if target_count != 1:
 new_eocd_offset = eocd_offset + delta
 put_u32(output, new_eocd_offset + 16, new_central_offset)
 output_bytes = str(output)
-if sha256(output_bytes) != expected_output_hash:
-    fail('generated output SHA-256 mismatch: %s' % sha256(output_bytes))
-open(output_path, 'wb').write(output_bytes)
-print('generated %d-byte V12 development code.ccp (%s.%s) with SHA-256 %s' % (len(output_bytes), class_name, method_name, sha256(output_bytes)))
+output_hash = sha256(output_bytes)
+if output_hash != expected_output_hash:
+    fail('generated output SHA-256 mismatch: %s' % output_hash)
+with open(output_path, 'wb') as destination:
+    destination.write(output_bytes)
+print('generated %d-byte V13 development code.ccp (%s.%s) with SHA-256 %s' % (len(output_bytes), class_name, method_name, output_hash))

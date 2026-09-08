@@ -14,7 +14,7 @@ Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $shippingFiles = @(
-    'evejs-launcher.client-mod.json',
+    'evejs-launcher.mod.json',
     'Install-DLSS5.bat',
     'Uninstall-DLSS5.bat',
     'Verify-DLSS5.bat',
@@ -27,6 +27,9 @@ $shippingFiles = @(
     'LICENSING.md',
     'EveJS-Integration\Install-DLSS5.bat',
     'EveJS-Integration\Invoke-Standalone.ps1',
+    'EveJS-Integration\Invoke-LauncherMod.ps1',
+    'EveJS-Integration\ReShade-Lists.ps1',
+    'EveJS-Integration\Client-Attachments.ps1',
     'EveJS-Integration\Manage-EveJSDLSS5.ps1',
     'EveJS-Integration\payload-manifest.json',
     'EveJS-Integration\Public-Payload.ps1',
@@ -35,6 +38,7 @@ $shippingFiles = @(
     'EveJS-Integration\Verify-Runtime.bat',
     'EveJS-Integration\client-patches\templates\systemmenu_apply_graphics.py.in',
     'EveJS-Integration\client-patches\templates\device_create.py.in',
+    'EveJS-Integration\client-patches\templates\native_nr_bridge.py.in',
     'EveJS-Integration\client-patches\tools\local_source.py',
     'EveJS-Integration\client-patches\tools\reconstruct.py',
     'EveJS-Integration\client-patches\tools\build_code_ccp.py',
@@ -192,24 +196,19 @@ foreach ($relative in $shippingFiles) {
     })
 }
 
-$descriptor = [IO.File]::ReadAllText((Get-SafePackagePath 'evejs-launcher.client-mod.json'), $utf8) | ConvertFrom-Json
-if ([int]$descriptor.schemaVersion -ne 3 -or $descriptor.id -ne 'evejs-dlss5' -or $descriptor.version -ne '0.5.7' -or
-    $descriptor.manager.path -cne 'EveJS-Integration/Manage-EveJSDLSS5.ps1') {
-    throw 'Unexpected development package identity or manager path.'
+$descriptor = [IO.File]::ReadAllText((Get-SafePackagePath 'evejs-launcher.mod.json'), $utf8) | ConvertFrom-Json
+if ([int]$descriptor.schemaVersion -ne 3 -or $descriptor.id -ne 'evejs-dlss5' -or $descriptor.version -ne '0.5.8' -or
+    $descriptor.kind -cne 'client-package' -or $descriptor.activation.strategy -cne 'client_package' -or
+    [int]$descriptor.launcherApi.version -ne 1 -or $descriptor.launcherApi.minLauncherVersion -cne '1.0.53' -or
+    $descriptor.launcherApi.helper.runtime -cne 'powershell' -or
+    $descriptor.launcherApi.helper.path -cne 'EveJS-Integration/Invoke-LauncherMod.ps1') {
+    throw 'Unexpected public package identity or helper contract.'
 }
-$compatibilityNames = @($descriptor.compatibility.PSObject.Properties.Name | Sort-Object)
-if (($compatibilityNames -join ',') -cne 'clientBuild,evejsVersionPolicy,profile' -or
-    [string]$descriptor.compatibility.evejsVersionPolicy -cne 'any' -or
-    [int]$descriptor.compatibility.clientBuild -ne 3396210 -or
-    [string]$descriptor.compatibility.profile -cne 'DLSS5') {
-    throw 'Unexpected descriptor compatibility policy.'
-}
-Assert-Pin 'EveJS-Integration\Manage-EveJSDLSS5.ps1' ([string]$descriptor.manager.sha256)
 $managerText = [IO.File]::ReadAllText((Get-SafePackagePath 'EveJS-Integration\Manage-EveJSDLSS5.ps1'), $utf8)
 Assert-Pin 'EveJS-Integration\Public-Payload.ps1' (Get-ManagerPin $managerText 'ExpectedPublicPayloadHelperSha256')
 Assert-Pin 'EveJS-Integration\payload-manifest.json' (Get-ManagerPin $managerText 'ExpectedPayloadManifestSha256')
 $manifest = [IO.File]::ReadAllText((Get-SafePackagePath 'EveJS-Integration\payload-manifest.json'), $utf8) | ConvertFrom-Json
-if ([int]$manifest.schemaVersion -ne 5 -or $manifest.integrationVersion -ne '0.5.6' -or $manifest.generator.id -cne 'evejs-code-ccp-v12-local-source-v1') { throw 'Unexpected payload manifest identity.' }
+if ([int]$manifest.schemaVersion -ne 5 -or $manifest.integrationVersion -ne '0.5.8' -or $manifest.generator.id -cne 'evejs-code-ccp-v13-local-source-v1') { throw 'Unexpected payload manifest identity.' }
 $bundled = @($manifest.files | Where-Object { $_.sourceKind -eq 'bundled' })
 if ($bundled.Count -ne 1 -or $bundled[0].id -ne 'reshade-evejs' -or $bundled[0].packagePath -cne 'payload\reshade\ReShade64.dll') {
     throw 'Only the reviewed ReShade binary may be bundled.'
@@ -221,6 +220,7 @@ $expectedTools = @{
     'builder' = 'client-patches\tools\build_code_ccp.py'
     'graphics-template' = 'client-patches\templates\systemmenu_apply_graphics.py.in'
     'startup-template' = 'client-patches\templates\device_create.py.in'
+    'native-bridge' = 'client-patches\templates\native_nr_bridge.py.in'
     'local-source' = 'client-patches\tools\local_source.py'
     'reconstruct' = 'client-patches\tools\reconstruct.py'
 }
@@ -241,7 +241,7 @@ $outputDirectory = Assert-PlainPath (Join-Path $PSScriptRoot 'candidate-output')
 if (Test-Path -LiteralPath $outputDirectory) {
     if (-not (Test-Path -LiteralPath $outputDirectory -PathType Container)) { throw 'candidate-output is not a directory.' }
 } else { New-Item -ItemType Directory -Path $outputDirectory | Out-Null }
-$candidateName = 'EveJS-DLSS5-0.5.7-RELEASE-CANDIDATE-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') + '-' + [Guid]::NewGuid().ToString('N') + '.zip'
+$candidateName = 'EveJS-DLSS5-' + $descriptor.version + '-RELEASE-CANDIDATE-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') + '-' + [Guid]::NewGuid().ToString('N') + '.zip'
 $candidatePath = Join-Path $outputDirectory $candidateName
 $partialPath = $candidatePath + '.partial'
 if ((Test-Path -LiteralPath $candidatePath) -or (Test-Path -LiteralPath $partialPath)) { throw 'Candidate already exists; nothing will be overwritten.' }
