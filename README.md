@@ -1,120 +1,90 @@
-# EveJS DLSS5 + ReShade 0.5.8
+# Install DLSS5 + ReShade 0.5.8
 
-The combined package includes ReShade, RenoDX integration and the DLSS5 client guard. Do not install a second ReShade proxy over it. Launcher integration requires **EveJS Launcher 1.0.53 or later**.
+**Use these steps if you play through EveJS Launcher. ReShade is already included.**
 
-DLSS5 owns its installation, profile preparation and rendering behavior through the public mod interface. It is not tied to a particular EveJS server version; the physical EVE client build requirement below still applies.
+You need a working EveJS setup on Windows and **EveJS Launcher 1.0.53 or newer**. This mod supports EVE client build **3396210**.
 
-## Requirements
+## 1. Download the mod
 
-- A working local EveJS installation and physical EVE client build **3396210**.
-- 64-bit Windows with Windows PowerShell 5.1.
-- Hardware compatible with the retained DLSS5/RenoDX payload. Focused rendering and two-client checks were performed on the test setup; other hardware combinations are not all verified.
-- Internet for missing first-install archives. Valid materialized cache files
-  can be used without downloading their source archives again.
+Click **[Download EveJS-DLSS5-0.5.8.zip](https://github.com/V0nCleef/EveJS-DLSS5/releases/download/v0.5.8/EveJS-DLSS5-0.5.8.zip)**.
 
-## Launcher installation
+Save it somewhere you can find, such as **Downloads**.
 
-1. Keep the complete `DLSS5` folder together in your EveJS `mods` folder, or
-   import the release ZIP through Launcher 1.0.53.
-2. Select the correct EveJS and physical `tq` client in the launcher.
-3. Close clients using that physical installation, then install/enable the mod.
-4. Use the mod's **Configure** form to choose the Neural Rendering preference
-   for a launcher profile. Restart that profile's client after changing it.
-5. Launch normally. The helper prepares private ReShade settings through the
-   launcher's public contribution interface.
+**Leave the ZIP as it is. Do not extract it.** The launcher will unpack it for you. You do not need `Source code` or the `.update.json` file.
 
-The manifest is `evejs-launcher.mod.json`. This package omits the
-old automatic `evejs-launcher.client-mod.json` contract, which cannot express its
-minimum launcher version or contribution ownership.
+## 2. Open the correct launcher
 
-Installation, disable and removal are **global to the physical client**. Multiple
-profiles use the same binaries and keep their own NR preferences. Removing one
-profile does not uninstall those shared DLLs. Distinct physical clients remain
-independent; positively identified clients from another installation do not
-block changes here. A client whose executable path cannot be read is reported
-separately before shared binaries are changed.
+1. Close **all EVE game windows**. Keep the launcher open.
+2. Check the version at the bottom-right of the launcher. It must say **1.0.53 or newer**.
+3. If it is older, update the launcher first. You can also [download Launcher 1.0.53 here](https://github.com/V0nCleef/evejs-launcher/releases/tag/v1.0.53).
 
-The private INI retains existing settings, including F6-persisted OFF. Older
-`<profile>/DLSS5` settings and presets are imported as key contributions without
-changing the originals. Shader/texture paths keep their original locations.
-A shared `[INSTALL] BasePath` override needs to be resolved first because it
-would override profile isolation.
+If you already play successfully through this launcher, leave its paths as they are.
 
-## Updating from 0.5.7
+If you are setting it up for the first time, open **Settings**:
 
-1. Update the launcher to **1.0.53** first. Keeping DLSS5 0.5.7 installed is supported; a launcher update does not upgrade the mod automatically.
-2. Close EVE clients before changing the mod. Keep your existing package and recovery backups.
-3. Remove the old DLSS5 package through the launcher, retaining private profile data. Complete its cleanup before importing the new ZIP; do not overwrite an active mod folder.
-4. Import **EveJS-DLSS5-0.5.8.zip**, then enable the new DLSS5 package. Confirm the configured physical client path and your profile's Configure settings before launching.
+- **EveJS Root** is your server folder, containing `package.json` and `Play.bat`.
+- **EVE Client Path** is the game's `tq` folder, containing `bin64/exefile.exe`.
 
-Version 0.5.7 has no update metadata, so this first upgrade is manual. Once 0.5.8 is installed, later compatible releases can appear under **Mods** with a gold update badge and **Update** button. The update window shows release notes, download progress and installation stages. The companion `.update.json` asset is read automatically; users do not import it separately.
+These are two different folders. Finish setting up EveJS and confirm the game works before adding the mod.
 
-## Standalone use
+## 3. Already have DLSS5 0.5.7? Remove it first
 
-Keep the extracted package, close clients using the selected installation and
-run `Install-DLSS5.bat`. Supply the EveJS folder when requested; it reads the client
-location from that setup. `Verify-DLSS5.bat` checks installation files.
-`Uninstall-DLSS5.bat` restores the owned original files and settings.
+**Never installed DLSS5 before? Skip to step 4.**
 
-## In-game behavior
+1. In the launcher, click **Mods** on the left.
+2. Find the **EveJS DLSS5** row.
+3. Click its **UNINSTALL** button.
+4. Click **Yes** when the launcher asks whether to uninstall.
+5. Wait for the **DLSS5 Uninstalled** message. Close that message.
 
-- Select DLSS in the game's graphics settings. NR is the additional neural
-  rendering effect; Frame Generation is a separate setting.
-- Physical F6 affects the foreground client. Synthetic toggles target the
-  process-owned window through the retained native bridge.
-- Moving from another upscaler into DLSS requests NR ON. Saved DLSS startup keeps
-  the persisted preference, including OFF.
-- Changes while staying on DLSS preserve the latest manual NR choice.
-- If F6 or the add-on lifetime changes during the OFF settling period, the
-  graphics mutation stops for a retry. A quick ON-then-OFF is detected too.
-- A failed graphics apply remembers the wanted preference for a later ready
-  retry. Startup synchronization allows at most three relevant device-creation
-  attempts during one process lifetime.
+The launcher keeps the recovery package and backups. Your private profile settings are retained automatically; there is no separate “keep settings” checkbox to find.
 
-Do not infer successful neural rendering from the ReShade banner alone. Check
-NR evidence and the actual image in the selected client. For a launcher profile,
-`EveJS-Integration/Verify-Runtime.bat <PID> "<private mod data directory>"` reads
-that profile's `ReShade.log`; omitting the second argument checks the shared log.
+**If uninstall reports an error, stop here and ask for help with that exact message. Do not delete or overwrite the old mod folder.**
 
-## Removal and recovery
+Updating the launcher alone does **not** update DLSS5 0.5.7. It also does not add an Update button to that old mod.
 
-Use the launcher's mod removal or the standalone uninstaller for the selected
-server. Keep the package until removal finishes. When multiple servers share
-the same physical client and DLSS5 payload, each has its own launch-settings
-attachment. Removing one restores that server's settings; the payload remains
-until the last server detaches. Private profile preferences remain separate.
-Shared original-file backups and the binary
-journal remain beside the physical client at
-`<tq parent>/_evejs/dlss5/install`. The public reference receipt inside
-`tq/_local/mod-receipts/dlss5/<server-key>.json` survives a missing server/mod
-folder. Each server gets its own reference receipt, so another server cannot
-overwrite its launcher identity. Older `dlss5.json` receipts remain untouched.
+## 4. Add the new ZIP
 
-The manager's `-Action VerifyClient` checks the retained physical installation
-without requiring the original server folder. Supply the recorded
-`-EveJSRootPath`, its parent `-WorkspaceRoot`, and the physical `-ClientRoot`.
-This is a read-only client check; normal `Verify` also checks server launch wiring.
+1. Open **Mods** in the launcher.
+2. Click **Add ZIP**.
+3. Find the **EveJS-DLSS5-0.5.8.zip** file you downloaded in step 1.
+4. Select it and click **Open**.
+5. Wait for **EveJS DLSS5 + ReShade** to appear in the mod list. It starts switched off.
 
-`Ensure` attaches another explicitly selected server to an already installed,
-matching payload without rewriting its DLLs or client archive. A different
-payload or global control profile is a shared-file conflict: detach the server
-attachments before changing that physical installation. An interrupted attachment
-is retained in the journal; `Recover` restores its server settings before retrying.
-It does not uninstall a payload still used by another attached server.
+**You do not need to copy files into the mods folder yourself.**
 
-Profile changes and payload upgrades have separate operation snapshots. A failed
-operation restores its own preimages; it does not overwrite the original-install
-backups. Recovery refuses to overwrite a file changed outside the transaction.
-If the former server is gone, client restoration does not recreate that server.
+## 5. Turn the mod on
 
-Only the integration's batch assignments and recorded ReShade keys are restored.
-Unrelated settings, custom preset data and logs remain. An originally absent INI
-is removed when no meaningful values remain. Repeating removal never acquires
-ownership of files created later. Proxy DLL conflicts remain explicit binary
-conflicts; they cannot be merged as INI contributions.
+1. On the **EveJS DLSS5 + ReShade** row, click the **small on/off switch at the far right**.
+2. Wait for installation to finish. The first installation may take longer because it downloads the files it needs.
+3. Check that the row says **CONFIGURED ON**. If it shows an error instead, stop and copy the error message when asking for help.
 
-## Licensing and source
+## 6. Launch EVE
 
-See the files under `DLSS5/`: `LICENSING.md`, `THIRD-PARTY-NOTICES.md`, `SOURCE-GENERATION.md` and the retained
-ReShade source/provenance files. Generated client archives and the copied client
-Python runtime are build-local data and are not shipped in the public ZIP.
+1. Start your server and market as you normally do.
+2. Launch your character through the launcher.
+3. In EVE, press **Esc** and open the graphics settings.
+4. Set **Upscaling** to **DLSS** and apply the change.
+5. Close the Esc menu. Press **F6** to toggle Neural Rendering on or off in that game window.
+
+**Neural Rendering is the extra visual effect. It is separate from DLSS upscaling and Frame Generation.** It is not a promise of higher FPS.
+
+## Optional: choose a saved setting for each profile
+
+1. Close the EVE window for that profile.
+2. Open **Mods → Configure** on the DLSS5 row.
+3. Choose the profile from the list and click **OK**.
+4. Set **Enable Neural Rendering** how you want it, then click **Save**.
+5. Close the settings window and launch that profile again.
+
+If no profiles are listed, launch an account through the launcher once, close its EVE window, then try Configure again.
+
+## What happens with the next DLSS5 update?
+
+Once **0.5.8** is installed, a later supported release can show a gold **Update** button on its mod row and a gold count beside **Mods**. Click Update to read its changes and start the update. The window shows download progress and installation stages.
+
+**The move from 0.5.7 to 0.5.8 is the one-time manual upgrade described above.**
+
+## Need the standalone scripts or technical details?
+
+[Standalone installation, recovery, compatibility and licensing](https://github.com/V0nCleef/EveJS-DLSS5/blob/main/docs/TECHNICAL.md).
