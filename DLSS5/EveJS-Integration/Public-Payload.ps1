@@ -99,7 +99,7 @@ function Assert-PublicPayloadManifestContract {
     if ([int]$Manifest.schemaVersion -ne 5) {
         throw "Unsupported public payload schemaVersion '$($Manifest.schemaVersion)'."
     }
-    if (-not ([string]$Manifest.integrationVersion).Equals('0.5.8', [StringComparison]::Ordinal)) {
+    if (-not ([string]$Manifest.integrationVersion).Equals('0.5.9', [StringComparison]::Ordinal)) {
         throw "Unsupported public integrationVersion '$($Manifest.integrationVersion)'."
     }
     if ([int]$Manifest.clientBuild -ne 3396210) {
@@ -107,7 +107,7 @@ function Assert-PublicPayloadManifestContract {
     }
 
     $expectedArtifacts = [ordered]@{
-        'renodx-dlss5-4.70' = 'https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-4.70/renodx-dlss5_4.70.zip'
+        'renodx-dlss5-7.0.0-rc8' = 'https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-7.0.0-rc8/renodx-dlss5_7.0.0-rc8.zip'
         'nvidia-dlssnr-310.8.0' = 'https://github.com/RankFTW/rhi-repo/releases/download/dlssnr-310.8.0/nvngx_dlssnr_310.8.0.zip'
         'nvidia-streamline-2.13.0.0' = 'https://github.com/RankFTW/rhi-repo/releases/download/streamline-2.13.0.0/streamline_2.13.0.0.zip'
     }
@@ -175,8 +175,12 @@ function Assert-PublicPayloadManifestContract {
     Assert-PublicSha256Value -Value ([string]$Manifest.generator.patchedPycSha256) -Label 'Client guard patched PYC sha256' | Out-Null
     Assert-PublicObjectProperties -Value $Manifest.generator.intermediateArchive `
         -Required @('bytes', 'sha256') -Allowed @('bytes', 'sha256') -Label 'Client guard intermediate archive'
-    if ([Int64]$Manifest.generator.intermediateArchive.bytes -ne 30760794 -or
-        [string]$Manifest.generator.intermediateArchive.sha256 -cne '65A3396C7B7A06E4A2BFE93AA6601600CE67F6D3E3232F7FEF323D6EB43C6E1D') {
+    $firstStage = $Manifest.generator.intermediateArchive
+    $knownPublicStage = ([Int64]$firstStage.bytes -eq 30760794 -and
+        [string]$firstStage.sha256 -ceq '65A3396C7B7A06E4A2BFE93AA6601600CE67F6D3E3232F7FEF323D6EB43C6E1D')
+    $knownEveJS129Stage = ([Int64]$firstStage.bytes -eq 30761381 -and
+        [string]$firstStage.sha256 -ceq '0E919E2109FE30AA651CF33DA25ED95AC9C4975273AE66208A39DCBAE74180BC')
+    if (-not ($knownPublicStage -or $knownEveJS129Stage)) {
         throw 'Client guard intermediate archive does not match the reviewed V13 first-stage output.'
     }
     $startup = $Manifest.generator.startupPatch
@@ -254,7 +258,7 @@ function Assert-PublicPayloadManifestContract {
     $expectedFiles = [ordered]@{
         'nvidia-dlssnr' = [ordered]@{ destination = 'bin64\nvngx_dlssnr.dll'; component = 'neuralRuntime'; sourceKind = 'archive'; artifactId = 'nvidia-dlssnr-310.8.0'; archiveEntry = 'nvngx_dlssnr.dll' }
         'nvidia-streamline-dlss-nr' = [ordered]@{ destination = 'bin64\sl.dlss_nr.dll'; component = 'neuralRuntime'; sourceKind = 'archive'; artifactId = 'nvidia-streamline-2.13.0.0'; archiveEntry = 'sl.dlss_nr.dll' }
-        'renodx-dlss5' = [ordered]@{ destination = 'bin64\renodx-dlss5.addon64'; component = 'renodx'; sourceKind = 'archive'; artifactId = 'renodx-dlss5-4.70'; archiveEntry = 'renodx-dlss5.addon64' }
+        'renodx-dlss5' = [ordered]@{ destination = 'bin64\renodx-dlss5.addon64'; component = 'renodx'; sourceKind = 'archive'; artifactId = 'renodx-dlss5-7.0.0-rc8'; archiveEntry = 'renodx-dlss5.addon64' }
         'reshade-evejs' = [ordered]@{ destination = 'bin64\dxgi.dll'; component = 'reshade'; sourceKind = 'bundled'; artifactId = ''; archiveEntry = '' }
         'evejs-transition-guard' = [ordered]@{ destination = 'code.ccp'; component = 'clientGuard'; sourceKind = 'generated'; artifactId = ''; archiveEntry = '' }
     }
@@ -458,7 +462,7 @@ function Get-VerifiedPublicArtifact {
             -Uri ([string]$Artifact.url) `
             -OutFile $staged `
             -TimeoutSec 900 `
-            -Headers @{ 'User-Agent' = 'EveJS-DLSS5/0.5.8' } | Out-Null
+            -Headers @{ 'User-Agent' = 'EveJS-DLSS5/0.5.9' } | Out-Null
         Assert-PublicFileRecord -Path $staged -Record $Artifact -Label "Downloaded artifact '$($Artifact.id)'" | Out-Null
         Move-StagedFileIntoPlace -StagedPath $staged -Destination $destination
     } finally {

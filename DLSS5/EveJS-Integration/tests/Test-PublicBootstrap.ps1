@@ -681,7 +681,7 @@ try {
     Invoke-Test 'Standalone rejects unrelated package' {
         $f = New-StandaloneFixture '0.12.7'
         Write-FixtureText (Join-Path $f.root 'package.json') '{"name":"unrelated","version":"0.12.7"}' | Out-Null
-        Assert-Throws { Resolve-EveJSDlss5StandaloneTarget -PackageRoot $f.package -NoPrompt } '*eve.js package*'
+        Assert-Throws { Resolve-EveJSDlss5StandaloneTarget -PackageRoot $f.package -NoPrompt } '*eve.js or evejs-repo package*'
     }
     Invoke-Test 'Standalone rejects ambiguous client settings' {
         $f = New-StandaloneFixture '0.12.7'

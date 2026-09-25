@@ -1,4 +1,4 @@
-# EveJS DLSS5 + ReShade 0.5.8
+# EveJS DLSS5 + ReShade 0.5.9
 
 The combined package includes ReShade, RenoDX integration and the DLSS5 client guard. Do not install a second ReShade proxy over it. Launcher integration requires **EveJS Launcher 1.0.53 or later**.
 
@@ -8,7 +8,7 @@ DLSS5 owns its installation, profile preparation and rendering behavior through 
 
 - A working local EveJS installation and physical EVE client build **3396210**.
 - 64-bit Windows with Windows PowerShell 5.1.
-- Hardware compatible with the retained DLSS5/RenoDX payload. Focused rendering and two-client checks were performed on the test setup; other hardware combinations are not all verified.
+- Hardware compatible with the retained DLSS5/RenoDX payload. Neural Rendering was tested in EVE on an RTX 5090 with NVIDIA driver 617.14. Other hardware and driver combinations are not established by that test.
 - Internet for missing first-install archives. Valid materialized cache files
   can be used without downloading their source archives again.
 
@@ -45,9 +45,11 @@ would override profile isolation.
 1. Update the launcher to **1.0.53** first. Keeping DLSS5 0.5.7 installed is supported; a launcher update does not upgrade the mod automatically.
 2. Close EVE clients before changing the mod. Keep your existing package and recovery backups.
 3. Remove the old DLSS5 package through the launcher, retaining private profile data. Complete its cleanup before importing the new ZIP; do not overwrite an active mod folder.
-4. Import **EveJS-DLSS5-0.5.8.zip**, then enable the new DLSS5 package. Confirm the configured physical client path and your profile's Configure settings before launching.
+4. Import **EveJS-DLSS5-0.5.9.zip**, then enable the new DLSS5 package. Confirm the configured physical client path and your profile's Configure settings before launching.
 
 Version 0.5.7 has no update metadata, so this first upgrade is manual. Once 0.5.8 is installed, later compatible releases can appear under **Mods** with a gold update badge and **Update** button. The update window shows release notes, download progress and installation stages. The companion `.update.json` asset is read automatically; users do not import it separately.
+
+To update from 0.5.8 to 0.5.9, close all EVE clients and use that **Update** button. The manager retains its original-file backups and journals the RenoDX payload change. Version 0.5.9 supports both known build 3396210 client file variants, including the one used for the NVIDIA 617.14 live test.
 
 ## Standalone use
 

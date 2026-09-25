@@ -1,11 +1,13 @@
-# Local source generation — 0.5.8 / V13 candidate
+# Local source generation — 0.5.9 / V13 guard
 
-Package and integration payload version are both **0.5.8**. The generated client
-guard changed; calling this the unchanged 0.5.6 payload would be incorrect.
-The bundled ReShade 6.8.0.10/EveJS V11 DLL, RenoDX and NVIDIA inputs are unchanged.
-No native DLL source/binary was rebuilt or manually patched for this candidate.
+Package and integration payload version are both **0.5.9**. The original public
+client guard and archive pins are unchanged from 0.5.8. An additional reviewed
+manifest covers the second known build 3396210 client variant.
+The pinned RenoDX add-on changes to 7.0.0-rc8. The bundled ReShade
+6.8.0.10/EveJS V11 DLL and NVIDIA inputs are unchanged. No native DLL was
+rebuilt or manually patched for this release.
 
-Only the exact supported client archive is accepted. The narrow Python 2.7
+Only an exact supported client archive is accepted. The narrow Python 2.7
 emitter derives local names, literals and control-flow fragments from code
 objects as data. Unsupported code shapes and input hashes are rejected.
 Original or reconstructed client modules are never imported or executed during

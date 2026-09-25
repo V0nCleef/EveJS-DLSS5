@@ -32,6 +32,7 @@ $shippingFiles = @(
     'EveJS-Integration\Client-Attachments.ps1',
     'EveJS-Integration\Manage-EveJSDLSS5.ps1',
     'EveJS-Integration\payload-manifest.json',
+    'EveJS-Integration\payload-manifest-evejs129.json',
     'EveJS-Integration\Public-Payload.ps1',
     'EveJS-Integration\Restore-Originals.bat',
     'EveJS-Integration\Verify-DLSS5.bat',
@@ -197,7 +198,7 @@ foreach ($relative in $shippingFiles) {
 }
 
 $descriptor = [IO.File]::ReadAllText((Get-SafePackagePath 'evejs-launcher.mod.json'), $utf8) | ConvertFrom-Json
-if ([int]$descriptor.schemaVersion -ne 3 -or $descriptor.id -ne 'evejs-dlss5' -or $descriptor.version -ne '0.5.8' -or
+if ([int]$descriptor.schemaVersion -ne 3 -or $descriptor.id -ne 'evejs-dlss5' -or $descriptor.version -ne '0.5.9' -or
     $descriptor.kind -cne 'client-package' -or $descriptor.activation.strategy -cne 'client_package' -or
     [int]$descriptor.launcherApi.version -ne 1 -or $descriptor.launcherApi.minLauncherVersion -cne '1.0.53' -or
     $descriptor.launcherApi.helper.runtime -cne 'powershell' -or
@@ -207,8 +208,23 @@ if ([int]$descriptor.schemaVersion -ne 3 -or $descriptor.id -ne 'evejs-dlss5' -o
 $managerText = [IO.File]::ReadAllText((Get-SafePackagePath 'EveJS-Integration\Manage-EveJSDLSS5.ps1'), $utf8)
 Assert-Pin 'EveJS-Integration\Public-Payload.ps1' (Get-ManagerPin $managerText 'ExpectedPublicPayloadHelperSha256')
 Assert-Pin 'EveJS-Integration\payload-manifest.json' (Get-ManagerPin $managerText 'ExpectedPayloadManifestSha256')
+Assert-Pin 'EveJS-Integration\payload-manifest-evejs129.json' (Get-ManagerPin $managerText 'AlternatePayloadManifestSha256')
 $manifest = [IO.File]::ReadAllText((Get-SafePackagePath 'EveJS-Integration\payload-manifest.json'), $utf8) | ConvertFrom-Json
-if ([int]$manifest.schemaVersion -ne 5 -or $manifest.integrationVersion -ne '0.5.8' -or $manifest.generator.id -cne 'evejs-code-ccp-v13-local-source-v1') { throw 'Unexpected payload manifest identity.' }
+if ([int]$manifest.schemaVersion -ne 5 -or $manifest.integrationVersion -ne '0.5.9' -or $manifest.generator.id -cne 'evejs-code-ccp-v13-local-source-v1') { throw 'Unexpected payload manifest identity.' }
+$alternateManifest = [IO.File]::ReadAllText((Get-SafePackagePath 'EveJS-Integration\payload-manifest-evejs129.json'), $utf8) | ConvertFrom-Json
+if ([int]$alternateManifest.schemaVersion -ne 5 -or $alternateManifest.integrationVersion -ne '0.5.9' -or
+    [int]$alternateManifest.clientBuild -ne [int]$manifest.clientBuild -or
+    @($alternateManifest.files).Count -ne @($manifest.files).Count -or
+    ($alternateManifest.artifacts | ConvertTo-Json -Depth 16 -Compress) -cne ($manifest.artifacts | ConvertTo-Json -Depth 16 -Compress) -or
+    ($alternateManifest.generator.tools | ConvertTo-Json -Depth 16 -Compress) -cne ($manifest.generator.tools | ConvertTo-Json -Depth 16 -Compress)) {
+    throw 'The alternate client manifest differs outside the reviewed client identity.'
+}
+$alternateGuard = @($alternateManifest.files | Where-Object { $_.id -eq 'evejs-transition-guard' })
+if ($alternateGuard.Count -ne 1 -or
+    [string]$alternateGuard[0].requiredOriginalSha256 -cne '6365F63C9F64BBE3DEAA636495144036627258F612477C9F8D2D97D39F07EA5C' -or
+    [string]$alternateGuard[0].sha256 -cne '9152856EED37FD1159BEEE5894B60D22BD0B9E36DF2EB7215DC5F1DC7EB80949') {
+    throw 'The alternate client archive is not the reviewed EveJS 0.12.9 variant.'
+}
 $bundled = @($manifest.files | Where-Object { $_.sourceKind -eq 'bundled' })
 if ($bundled.Count -ne 1 -or $bundled[0].id -ne 'reshade-evejs' -or $bundled[0].packagePath -cne 'payload\reshade\ReShade64.dll') {
     throw 'Only the reviewed ReShade binary may be bundled.'

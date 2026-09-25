@@ -79,12 +79,13 @@ function Resolve-EveJSDlss5StandaloneTarget {
     $packageProperties = @($packageJson.PSObject.Properties.Name)
     $evejsVersion = if ($packageProperties -contains 'version') { ([string]$packageJson.version).Trim() } else { '' }
     if ($packageProperties -notcontains 'name' -or
-        -not ([string]$packageJson.name).Equals('eve.js', [StringComparison]::Ordinal) -or
+        -not (([string]$packageJson.name).Equals('eve.js', [StringComparison]::Ordinal) -or
+              ([string]$packageJson.name).Equals('evejs-repo', [StringComparison]::Ordinal)) -or
         [string]::IsNullOrWhiteSpace($evejsVersion) -or
         $evejsVersion.Length -gt 64 -or
         $evejsVersion -notmatch '^[0-9A-Za-z][0-9A-Za-z._+-]*$' -or
         $evejsVersion.Contains('..')) {
-        throw 'The selected folder must contain an eve.js package with a non-empty, sane version string.'
+        throw 'The selected folder must contain an eve.js or evejs-repo package with a non-empty, sane version string.'
     }
 
     $configPath = Join-Path $evejsRoot 'tools\ClientSETUP\scripts\EvEJSConfig.bat'

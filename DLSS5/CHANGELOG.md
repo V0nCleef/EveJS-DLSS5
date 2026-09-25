@@ -1,3 +1,10 @@
+# 0.5.9 — 2026-09-25
+
+- Update the pinned RenoDX DLSS5 add-on from 4.70 to 7.0.0-rc8. The manager upgrades its owned payload and retains rollback records.
+- Support both known EVE client build 3396210 file variants and both `eve.js` and `evejs-repo` server package names in one download.
+- Live Neural Rendering test: RTX 5090, NVIDIA driver 617.14, EVE client build 3396210 using the EveJS 0.12.9 client variant. The EVE log reported feature 18 evaluations and an ENGAGED verdict; the rendered hangar image was inspected.
+- Keep the existing public client variant, ReShade build, NVIDIA DLSSNR runtime, Streamline plugin and license boundaries.
+
 # 0.5.8 — 2026-09-08
 
 - Move mod-specific installation, profile settings and cleanup into the mod through Launcher 1.0.53's public interface.

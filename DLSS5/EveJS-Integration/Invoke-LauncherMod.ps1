@@ -5,7 +5,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:AdapterVersion = '0.5.8'
+$script:AdapterVersion = '0.5.9'
 . (Join-Path $PSScriptRoot 'ReShade-Lists.ps1')
 $script:Utf8 = New-Object Text.UTF8Encoding($false)
 $script:PackageRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot)).TrimEnd('\')

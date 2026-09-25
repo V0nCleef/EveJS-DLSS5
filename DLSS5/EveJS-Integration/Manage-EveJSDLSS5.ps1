@@ -104,6 +104,7 @@ $script:BinRoot = Join-Path $script:ClientRoot "bin64"
 $script:ExePath = Join-Path $script:BinRoot "exefile.exe"
 $script:ConfigPath = Join-Path $script:EveJSRoot "tools\ClientSETUP\scripts\EvEJSConfig.bat"
 $script:PayloadManifestPath = Join-Path $script:IntegrationRoot "payload-manifest.json"
+$script:AlternatePayloadManifestPath = Join-Path $script:IntegrationRoot "payload-manifest-evejs129.json"
 $script:PublicPayloadHelperPath = Join-Path $script:IntegrationRoot "Public-Payload.ps1"
 $script:StateDirectory = $StateDirectory
 $expectedClientStateRoot = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $script:ClientRoot) "_evejs\dlss5\install")).TrimEnd("\\")
@@ -127,8 +128,18 @@ $script:ReShadeLogPath = Join-Path $script:BinRoot "ReShade.log"
 $script:PendingTransactionPath = Join-Path $script:StateRoot "pending-profile-transaction.json"
 $script:ProfileTransaction = $null
 $script:ExpectedExeSha256 = "2AAF7A9A8DFCDE85E4ADB50C1ECCD3756A4D29AEB854DFE69629846BA56EE979"
-$script:ExpectedPublicPayloadHelperSha256 = "D0C0C3CE06B6EC933432C4A5F0697BD17EBDCC053285C121893AA1243EFBCDC9"
-$script:ExpectedPayloadManifestSha256 = "1E4709B91F261C7DF52C9BA6356E925D9066F5D2A10AE871465CBF1AE87609D2"
+$script:AlternateExeSha256 = "5A26F6B9838963D6B687D433F4B11CB28BD1CF3A1670AD691D2DF394C88CD575"
+$script:ExpectedPublicPayloadHelperSha256 = "264CFEF0D2627852A5C94E78BF3DCC5C667234E52CE161B55F2DD47C11450964"
+$script:ExpectedPayloadManifestSha256 = "CF0768C4A4EFEED1E2C353223229B9A6A0D942AA9C8F8D31F1C44343361FDD22"
+$script:AlternatePayloadManifestSha256 = "247B4B76C8EE3D447C7B33100F727525D28187DEB6858F1B6D5EDC61AADC1E24"
+if (Test-Path -LiteralPath $script:ExePath -PathType Leaf) {
+    $selectedExeHash = (Get-FileHash -LiteralPath $script:ExePath -Algorithm SHA256).Hash
+    if ($selectedExeHash.Equals($script:AlternateExeSha256, [StringComparison]::OrdinalIgnoreCase)) {
+        $script:ExpectedExeSha256 = $script:AlternateExeSha256
+        $script:PayloadManifestPath = $script:AlternatePayloadManifestPath
+        $script:ExpectedPayloadManifestSha256 = $script:AlternatePayloadManifestSha256
+    }
+}
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $script:ManagedReShadeKeys = @(
     [pscustomobject][ordered]@{
@@ -1629,12 +1640,13 @@ function Assert-EveJSRootContract {
     $packageProperties = @($package.PSObject.Properties.Name)
     $version = if ($packageProperties -contains "version") { ([string]$package.version).Trim() } else { "" }
     if ($packageProperties -notcontains "name" -or
-        -not ([string]$package.name).Equals("eve.js", [StringComparison]::Ordinal) -or
+        -not (([string]$package.name).Equals("eve.js", [StringComparison]::Ordinal) -or
+              ([string]$package.name).Equals("evejs-repo", [StringComparison]::Ordinal)) -or
         [string]::IsNullOrWhiteSpace($version) -or
         $version.Length -gt 64 -or
         $version -notmatch '^[0-9A-Za-z][0-9A-Za-z._+-]*$' -or
         $version.Contains("..")) {
-        throw "The selected EveJS root must contain package name eve.js and a non-empty, sane version string."
+        throw "The selected EveJS root must contain package name eve.js or evejs-repo and a non-empty, sane version string."
     }
 
     $configPath = Join-Path $normalizedRoot "tools\ClientSETUP\scripts\EvEJSConfig.bat"

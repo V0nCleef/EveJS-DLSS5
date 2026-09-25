@@ -40,7 +40,7 @@ notice at `THIRD-PARTY-NOTICES/Microsoft-DirectX-Headers-MIT.txt`. This notice
 does not cover unrelated Microsoft SDKs or runtime components. No binary or
 native source patch was rebuilt or altered to add this notice.
 
-## RenoDX DLSS5 4.70 - downloaded, not bundled
+## RenoDX DLSS5 7.0.0-rc8 - downloaded, not bundled
 
 The exact add-on is obtained from the pinned RankFTW/rhi-repo release archive.
 Its publisher mirror does not establish a separate blanket license for every

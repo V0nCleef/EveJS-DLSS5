@@ -1,12 +1,18 @@
-# Install DLSS5 + ReShade 0.5.8
+# Install DLSS5 + ReShade 0.5.9
 
 **Use these steps if you play through EveJS Launcher. ReShade is already included.**
 
 You need a working EveJS setup on Windows and **EveJS Launcher 1.0.53 or newer**. This mod supports EVE client build **3396210**.
 
+Version 0.5.9 updates RenoDX to **7.0.0-rc8**. Neural Rendering was tested in EVE on an **RTX 5090 with NVIDIA driver 617.14**. Other driver and GPU combinations have not been validated by that test.
+
+**Already have 0.5.8?** Close all EVE clients, open **Mods**, then use the gold **Update** button on the DLSS5 row. Let the launcher finish and check for **CONFIGURED ON** before launching again. Keep your recovery backups. The steps below are for a new install or a manual upgrade from 0.5.7.
+
+This package supports both known build 3396210 client variants, including the client used with EveJS 0.12.9. It accepts the `eve.js` and `evejs-repo` server package names. The installer checks the files it will change, preserves unrelated mod files, and keeps recovery backups.
+
 ## 1. Download the mod
 
-Click **[Download EveJS-DLSS5-0.5.8.zip](https://github.com/V0nCleef/EveJS-DLSS5/releases/download/v0.5.8/EveJS-DLSS5-0.5.8.zip)**.
+Click **[Download EveJS-DLSS5-0.5.9.zip](https://github.com/V0nCleef/EveJS-DLSS5/releases/download/v0.5.9/EveJS-DLSS5-0.5.9.zip)**.
 
 Save it somewhere you can find, such as **Downloads**.
 
@@ -47,7 +53,7 @@ Updating the launcher alone does **not** update DLSS5 0.5.7. It also does not ad
 
 1. Open **Mods** in the launcher.
 2. Click **Add ZIP**.
-3. Find the **EveJS-DLSS5-0.5.8.zip** file you downloaded in step 1.
+3. Find the **EveJS-DLSS5-0.5.9.zip** file you downloaded in step 1.
 4. Select it and click **Open**.
 5. Wait for **EveJS DLSS5 + ReShade** to appear in the mod list. It starts switched off.
 
@@ -79,9 +85,9 @@ Updating the launcher alone does **not** update DLSS5 0.5.7. It also does not ad
 
 If no profiles are listed, launch an account through the launcher once, close its EVE window, then try Configure again.
 
-## What happens with the next DLSS5 update?
+## What happens with later DLSS5 updates?
 
-Once **0.5.8** is installed, a later supported release can show a gold **Update** button on its mod row and a gold count beside **Mods**. Click Update to read its changes and start the update. The window shows download progress and installation stages.
+Version **0.5.8 and later** can show a gold **Update** button on the mod row and a gold count beside **Mods**. Click Update to read its changes and start the update. The window shows download progress and installation stages.
 
 **The move from 0.5.7 to 0.5.8 is the one-time manual upgrade described above.**
 

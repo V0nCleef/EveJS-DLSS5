@@ -1,15 +1,15 @@
 {
   "schemaVersion": 5,
-  "integrationVersion": "0.5.8",
+  "integrationVersion": "0.5.9",
   "clientBuild": 3396210,
   "artifacts": [
     {
-      "id": "renodx-dlss5-4.70",
-      "name": "RenoDX DLSS5 4.70",
-      "url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-4.70/renodx-dlss5_4.70.zip",
-      "fileName": "renodx-dlss5_4.70.zip",
-      "bytes": 632174,
-      "sha256": "D6E356D01B429AF6288F488A4926C44F1D779A7D4586EE8C79D04D3A09A536E6",
+      "id": "renodx-dlss5-7.0.0-rc8",
+      "name": "RenoDX DLSS5 7.0.0-rc8",
+      "url": "https://github.com/RankFTW/rhi-repo/releases/download/renodx-dlss5-7.0.0-rc8/renodx-dlss5_7.0.0-rc8.zip",
+      "fileName": "renodx-dlss5_7.0.0-rc8.zip",
+      "bytes": 630308,
+      "sha256": "C0821162EBCC24DB29DFD1AD6E45214E9F118E40DE510F05F0981E0C9EA70639",
       "entries": [
         "renodx-dlss5.addon64"
       ],
@@ -175,15 +175,15 @@
     },
     {
       "id": "renodx-dlss5",
-      "source": "D5ADF82EB44B065F4C590AC91FE824BAB07AFEA0EB9F994BDE936710C8593952\\renodx-dlss5.addon64",
+      "source": "FF8B9738738265E09F01A1C470A0CB0A59EB021B2B23797C3DF7CEA722A724B6\\renodx-dlss5.addon64",
       "destination": "bin64\\renodx-dlss5.addon64",
       "component": "renodx",
       "sourceKind": "archive",
-      "artifactId": "renodx-dlss5-4.70",
+      "artifactId": "renodx-dlss5-7.0.0-rc8",
       "archiveEntry": "renodx-dlss5.addon64",
-      "bytes": 1732608,
-      "sha256": "D5ADF82EB44B065F4C590AC91FE824BAB07AFEA0EB9F994BDE936710C8593952",
-      "version": "4.70 / 0.2026.0828.0517",
+      "bytes": 1921024,
+      "sha256": "FF8B9738738265E09F01A1C470A0CB0A59EB021B2B23797C3DF7CEA722A724B6",
+      "version": "7.0.0-rc8",
       "licenseId": "renodx-mit-and-upstream-asset-terms"
     },
     {

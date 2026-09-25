@@ -131,7 +131,7 @@ Assert-Equal ([string]$codeRecord.requiredOriginalSha256) ((Get-FileHash -Litera
 Assert-Equal ([Int64]$codeRecord.requiredOriginalBytes) ([Int64](Get-Item -LiteralPath $StockCodeCcpPath).Length) 'Stock code.ccp bytes'
 
 $sourceArchives = @{
-    'renodx-dlss5-4.70' = $RenoDxZip
+    'renodx-dlss5-7.0.0-rc8' = $RenoDxZip
     'nvidia-dlssnr-310.8.0' = $DlssNrZip
     'nvidia-streamline-2.13.0.0' = $StreamlineZip
 }
