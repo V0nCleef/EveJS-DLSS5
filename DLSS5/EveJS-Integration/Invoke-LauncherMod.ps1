@@ -5,10 +5,12 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:AdapterVersion = '0.5.9'
+$script:AdapterVersion = '0.5.10'
 . (Join-Path $PSScriptRoot 'ReShade-Lists.ps1')
 $script:Utf8 = New-Object Text.UTF8Encoding($false)
 $script:PackageRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot)).TrimEnd('\')
+$script:OperationClock = [Diagnostics.Stopwatch]::StartNew()
+$script:ManagerBudgetMilliseconds = 120000
 
 function Get-PlainPath {
     param([Parameter(Mandatory=$true)][string]$Path)
@@ -78,13 +80,25 @@ function Invoke-BinaryManager {
     $process=New-Object Diagnostics.Process
     $process.StartInfo=$start
     try {
+        # The launcher bounds the whole helper process tree. Leave ten seconds
+        # for its correlated reply and use the remaining budget across every
+        # manager call; a pinned download alone may take up to 900 seconds.
+        $remaining=[int][Math]::Floor($script:ManagerBudgetMilliseconds - $script:OperationClock.Elapsed.TotalMilliseconds - 10000)
+        if ($remaining -le 0) { throw "DLSS5 $Action has no time left in the launcher operation." }
         if (-not $process.Start()) { throw 'Could not start the DLSS5 binary manager.' }
         $stdout=$process.StandardOutput.ReadToEndAsync()
         $stderr=$process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit(110000)) {
+        if (-not $process.WaitForExit($remaining)) {
             $process.Kill()
             $process.WaitForExit(5000) | Out-Null
-            throw 'DLSS5 preparation timed out. Its durable operation journal is available to Recover.'
+            $tail=@($stdout,$stderr) | ForEach-Object {
+                if ($_.Status -eq [Threading.Tasks.TaskStatus]::RanToCompletion) { [string]$_.Result }
+            }
+            $tail=$tail -join "`n"
+            $tail=($tail -replace '[\x00-\x1f]+',' ').Trim()
+            if ($tail.Length -gt 1200) { $tail=$tail.Substring($tail.Length-1200) }
+            $detail=if ($tail) { " Last manager output: $tail" } else { '' }
+            throw "DLSS5 $Action timed out within the launcher operation budget. Inspect the helper diagnostics; use Recover if an install journal was created.$detail"
         }
         $output=$stdout.GetAwaiter().GetResult()
         $errorText=$stderr.GetAwaiter().GetResult()
@@ -239,6 +253,13 @@ try {
     if ([string]$request.protocol -cne 'evejs_launcher_mod_v1' -or -not [Guid]::TryParse($reply.requestId,[ref]$requestGuid)) { throw 'Unsupported launcher request protocol or identity.' }
     if ([string]$request.mod.id -cne 'evejs-dlss5' -or [string]$request.mod.version -cne $script:AdapterVersion -or
         -not (Get-PlainPath ([string]$request.mod.path)).Equals($script:PackageRoot,[StringComparison]::OrdinalIgnoreCase)) { throw 'Launcher request does not identify this package.' }
+    $script:ManagerBudgetMilliseconds=switch ([string]$request.action) {
+        'install' { 3600000 }
+        'recover' { 3600000 }
+        'prepare_disable' { 600000 }
+        'prepare_remove' { 600000 }
+        default { 120000 }
+    }
     $client=Get-PlainPath ([string]$request.runtime.clientRoot)
     $evejs=Get-PlainPath ([string]$request.runtime.evejsRoot)
     $journal=Read-ClientJournal $client

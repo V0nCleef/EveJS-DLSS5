@@ -1,6 +1,6 @@
-# Local source generation — 0.5.9 / V13 guard
+# Local source generation — 0.5.10 / V13 guard
 
-Package and integration payload version are both **0.5.9**. The original public
+Package and integration payload version are both **0.5.10**. The original public
 client guard and archive pins are unchanged from 0.5.8. An additional reviewed
 manifest covers the second known build 3396210 client variant.
 The pinned RenoDX add-on changes to 7.0.0-rc8. The bundled ReShade

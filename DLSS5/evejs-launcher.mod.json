@@ -2,7 +2,7 @@
   "schemaVersion": 3,
   "id": "evejs-dlss5",
   "displayName": "EveJS DLSS5 + ReShade",
-  "version": "0.5.9",
+  "version": "0.5.10",
   "description": "Combined ReShade and DLSS5 client package. Installation is global to the physical client; Neural Rendering preferences are private to each launcher profile.",
   "kind": "client-package",
   "supportedBackends": [
@@ -15,7 +15,7 @@
   "restart": "client",
   "launcherApi": {
     "version": 1,
-    "minLauncherVersion": "1.0.53",
+    "minLauncherVersion": "1.0.68",
     "helper": {
       "runtime": "powershell",
       "path": "EveJS-Integration/Invoke-LauncherMod.ps1"

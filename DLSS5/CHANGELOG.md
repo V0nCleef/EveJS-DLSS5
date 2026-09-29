@@ -1,3 +1,10 @@
+# 0.5.10 — 2026-09-29
+
+- Fix DLSS5's own 110-second manager cutoff, which interrupted installs while the launcher still allowed time for a slow 109 MB pinned download or payload preparation.
+- Use the launcher's remaining action budget and retain the last manager output if the operation times out. Keep a correlated failure result and do not claim a recovery journal exists before one has been created.
+- Require EveJS Launcher 1.0.68 for the longer install operation and persistent diagnostics. The client payload and supported build 3396210 variants are unchanged from 0.5.9.
+- Investigated a community failure on EveJS 0.12.9: two attempts ended after 110.8 seconds before any active install journal was created. A live install retest with this version is pending.
+
 # 0.5.9 — 2026-09-25
 
 - Update the pinned RenoDX DLSS5 add-on from 4.70 to 7.0.0-rc8. The manager upgrades its owned payload and retains rollback records.

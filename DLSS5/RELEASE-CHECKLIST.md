@@ -1,6 +1,7 @@
-# 0.5.9 release verification
+# 0.5.10 release verification
 
-- Schema 3 mod package; launcher integration requires 1.0.53 or newer.
+- Schema 3 mod package; launcher integration requires 1.0.68 or newer.
+- Adapter manager calls use the launcher's remaining operation budget instead of a fixed 110-second cutoff. Live retry on the affected computer is still pending.
 - Stable update ZIP and companion metadata carry the same mod ID and version. No EveJS server version constraint.
 - Packaging checks validate the shipping allowlist, source/tool hashes and retained third-party notices.
 - Isolated provider tests cover installation, private profile preparation, update, removal and original-file restoration.
