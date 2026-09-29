@@ -41,7 +41,8 @@ function Get-TestFunctions {
 # Only named function definitions are loaded. In particular, none of the
 # manager's parameter initialization, install dispatch, or restore code runs.
 . ([scriptblock]::Create((Get-TestFunctions -Path $managerPath -Names @(
-    'Get-Sha256', 'Get-NormalizedPath', 'Assert-PathInsideRoot', 'Move-StagedFileIntoPlace', 'Register-ProfileTransactionMutation'
+    'Get-Sha256', 'Get-NormalizedPath', 'Assert-PathInsideRoot', 'Move-StagedFileIntoPlace', 'Register-ProfileTransactionMutation',
+    'Assert-ManifestPayloadCoverage', 'Test-ManifestMatchesPayloadMetadata'
 )) -join "`n"))
 . $helperPath
 . ([scriptblock]::Create((Get-TestFunctions -Path $standalonePath -Names @(
@@ -92,6 +93,17 @@ function New-FixtureRecord {
     param([string]$Path)
     return [pscustomobject]@{ bytes = (Get-Item -LiteralPath $Path).Length; sha256 = Get-Sha256 $Path }
 }
+
+# The source fixture is intentionally small, so substitute only the size
+# limit of the production archive observer while retaining exact hashes.
+function Get-PublicObservedArchiveRecord {
+    param([string]$Path)
+    Assert-FixturePath $Path | Out-Null
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw 'Missing fixture archive.' }
+    return (New-FixtureRecord $Path)
+}
+
+function Read-ActiveManifest { return $script:FixtureActiveManifest }
 
 function Copy-ManifestFixture {
     return ($script:ManifestJson | ConvertFrom-Json)
@@ -145,6 +157,10 @@ function Invoke-PublicClientGuardBuilder {
     Assert-FixturePath $source | Out-Null
     Assert-FixturePath $target | Out-Null
     Assert-Equal (Get-Sha256 $source) $Arguments[7] 'Each mocked stage must receive the verified input hash.'
+    if ($script:GeneratorMode -eq 'dynamic') {
+        Assert-Equal 'AUTO' $Arguments[8] 'Only the whole archive hash is derived; target PYC remains reviewed.'
+        Assert-True ($Arguments[11] -match '^[0-9A-F]{64}$') 'The reviewed target PYC hash must be passed to the builder.'
+    }
     if ($script:GeneratorCalls -eq 1) {
         Assert-Equal 'SystemMenu' $Arguments[9]
         Assert-Equal 'ApplyGraphicsSettings' $Arguments[10]
@@ -169,6 +185,7 @@ function New-GenerationFixture {
     $script:ClientRoot = Join-Path $script:CaseRoot 'client'
     $script:GeneratorCalls = 0
     $script:GeneratorMode = 'success'
+    $script:FixtureActiveManifest = $null
     $script:Stage1Bytes = $script:Utf8NoBom.GetBytes('Harmless stage-one archive fixture.')
     $script:Stage2Bytes = $script:Utf8NoBom.GetBytes('Harmless final two-stage archive fixture.')
     $original = Write-FixtureText (Join-Path $script:ClientRoot 'code.ccp') 'Harmless original archive fixture.'
@@ -189,7 +206,7 @@ function New-GenerationFixture {
     $finalRecord = New-FixtureRecord $stage2
     $file.bytes = $finalRecord.bytes; $file.sha256 = $finalRecord.sha256
     $file.requiredOriginalBytes = $originalRecord.bytes; $file.requiredOriginalSha256 = $originalRecord.sha256
-    return [pscustomobject]@{manifest=$m;file=$file;destination=(Join-Path $script:PayloadRoot 'fixture\code.ccp')}
+    return [pscustomobject]@{manifest=$m;file=$file;original=$original;destination=(Join-Path $script:PayloadRoot 'fixture\code.ccp')}
 }
 
 function New-DownloadFixture {
@@ -448,6 +465,18 @@ try {
         Assert-Equal $g.file.sha256 (Get-Sha256 $g.destination)
         Assert-NoPartials
     }
+    Invoke-Test 'Unrelated archive changes derive a new output and original journal identity' {
+        $g = New-GenerationFixture
+        Write-FixtureText $g.original 'Harmless archive with an unrelated change.' | Out-Null
+        $changed = New-FixtureRecord $g.original
+        $script:GeneratorMode = 'dynamic'
+        Initialize-EveJSPublicClientGuard -Manifest $g.manifest -File $g.file -Destination $g.destination
+        Assert-Equal 2 $script:GeneratorCalls
+        Assert-Equal $changed.sha256 $g.file.requiredOriginalSha256
+        Assert-Equal $changed.bytes $g.file.requiredOriginalBytes
+        Assert-Equal (Get-Sha256 $g.destination) $g.file.sha256
+        Assert-NoPartials
+    }
     foreach ($mode in @('bad-stage1', 'bad-stage2', 'throw-stage2', 'tamper-startup', 'tamper-intermediate')) {
         Invoke-Test ("Failed generation cleans both stages: " + $mode) {
             $g = New-GenerationFixture; $script:GeneratorMode = $mode
@@ -470,6 +499,35 @@ try {
         Write-FixtureBytes $g.destination $script:Stage2Bytes | Out-Null
         Initialize-EveJSPublicClientGuard -Manifest $g.manifest -File $g.file -Destination $g.destination
         Assert-Equal 0 $script:GeneratorCalls
+    }
+    Invoke-Test 'Ensure accepts a recorded compatible archive and rejects altered receipt metadata' {
+        $m = Copy-ManifestFixture
+        $operations = @($m.files | ForEach-Object {
+            $hasOriginal = $_.PSObject.Properties.Name -contains 'requiredOriginalSha256'
+            $originalSha = if ($hasOriginal) { [string]$_.requiredOriginalSha256 } else { $null }
+            $originalBytes = if ($hasOriginal) { [Int64]$_.requiredOriginalBytes } else { 0 }
+            [pscustomobject]@{
+                source = [string]$_.source; destination = [string]$_.destination
+                component = [string]$_.component; kind = 'replace'
+                originalSha256 = $originalSha
+                originalBytes = $originalBytes
+                installedSha256 = [string]$_.sha256; installedBytes = [Int64]$_.bytes
+                requiredOriginalSha256 = $originalSha
+                requiredOriginalBytes = $originalBytes
+            }
+        })
+        $receipt = [pscustomobject]@{ integrationVersion = [string]$m.integrationVersion; operations = $operations }
+        Assert-True (Test-ManifestMatchesPayloadMetadata -Manifest $receipt -PayloadManifest $m) 'Pinned receipt must match.'
+        $guard = @($receipt.operations | Where-Object { $_.destination -eq 'code.ccp' })[0]
+        $guard.originalSha256 = 'A' * 64
+        $guard.requiredOriginalSha256 = 'A' * 64
+        $guard.installedSha256 = 'B' * 64
+        $guard.originalBytes = 31000000
+        $guard.requiredOriginalBytes = 31000000
+        $guard.installedBytes = 31010000
+        Assert-True (Test-ManifestMatchesPayloadMetadata -Manifest $receipt -PayloadManifest $m) 'Compatible archive receipt must match.'
+        $guard.requiredOriginalSha256 = 'C' * 64
+        Assert-True (-not (Test-ManifestMatchesPayloadMetadata -Manifest $receipt -PayloadManifest $m)) 'Inconsistent original identity must fail.'
     }
 
     Invoke-Test 'File verification accepts exact bytes/hash' {

@@ -1,3 +1,9 @@
+# 0.5.11 — 2026-09-29
+
+- Generate the two DLSS5 client guard entries from a compatible build 3396210 `code.ccp` even when unrelated mods have changed the archive.
+- Authenticate the two original and generated PYC entries, preserve every other archive entry, and record the actual original and installed archive hashes for backup, verification and restore.
+- Keep blocking a true conflict when another mod changed either of the two code entries DLSS5 must patch. The renderer binaries are unchanged from 0.5.10. A live install test on the affected player's archive is pending.
+
 # 0.5.10 — 2026-09-29
 
 - Fix DLSS5's own 110-second manager cutoff, which interrupted installs while the launcher still allowed time for a slow 109 MB pinned download or payload preparation.

@@ -198,7 +198,7 @@ foreach ($relative in $shippingFiles) {
 }
 
 $descriptor = [IO.File]::ReadAllText((Get-SafePackagePath 'evejs-launcher.mod.json'), $utf8) | ConvertFrom-Json
-if ([int]$descriptor.schemaVersion -ne 3 -or $descriptor.id -ne 'evejs-dlss5' -or $descriptor.version -ne '0.5.10' -or
+if ([int]$descriptor.schemaVersion -ne 3 -or $descriptor.id -ne 'evejs-dlss5' -or $descriptor.version -ne '0.5.11' -or
     $descriptor.kind -cne 'client-package' -or $descriptor.activation.strategy -cne 'client_package' -or
     [int]$descriptor.launcherApi.version -ne 1 -or $descriptor.launcherApi.minLauncherVersion -cne '1.0.68' -or
     $descriptor.launcherApi.helper.runtime -cne 'powershell' -or
@@ -210,9 +210,9 @@ Assert-Pin 'EveJS-Integration\Public-Payload.ps1' (Get-ManagerPin $managerText '
 Assert-Pin 'EveJS-Integration\payload-manifest.json' (Get-ManagerPin $managerText 'ExpectedPayloadManifestSha256')
 Assert-Pin 'EveJS-Integration\payload-manifest-evejs129.json' (Get-ManagerPin $managerText 'AlternatePayloadManifestSha256')
 $manifest = [IO.File]::ReadAllText((Get-SafePackagePath 'EveJS-Integration\payload-manifest.json'), $utf8) | ConvertFrom-Json
-if ([int]$manifest.schemaVersion -ne 5 -or $manifest.integrationVersion -ne '0.5.10' -or $manifest.generator.id -cne 'evejs-code-ccp-v13-local-source-v1') { throw 'Unexpected payload manifest identity.' }
+if ([int]$manifest.schemaVersion -ne 5 -or $manifest.integrationVersion -ne '0.5.11' -or $manifest.generator.id -cne 'evejs-code-ccp-v13-local-source-v1') { throw 'Unexpected payload manifest identity.' }
 $alternateManifest = [IO.File]::ReadAllText((Get-SafePackagePath 'EveJS-Integration\payload-manifest-evejs129.json'), $utf8) | ConvertFrom-Json
-if ([int]$alternateManifest.schemaVersion -ne 5 -or $alternateManifest.integrationVersion -ne '0.5.10' -or
+if ([int]$alternateManifest.schemaVersion -ne 5 -or $alternateManifest.integrationVersion -ne '0.5.11' -or
     [int]$alternateManifest.clientBuild -ne [int]$manifest.clientBuild -or
     @($alternateManifest.files).Count -ne @($manifest.files).Count -or
     ($alternateManifest.artifacts | ConvertTo-Json -Depth 16 -Compress) -cne ($manifest.artifacts | ConvertTo-Json -Depth 16 -Compress) -or

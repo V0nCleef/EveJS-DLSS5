@@ -1,6 +1,6 @@
 {
   "schemaVersion": 5,
-  "integrationVersion": "0.5.10",
+  "integrationVersion": "0.5.11",
   "clientBuild": 3396210,
   "artifacts": [
     {
@@ -85,8 +85,8 @@
       {
         "id": "builder",
         "path": "client-patches\\tools\\build_code_ccp.py",
-        "bytes": 12723,
-        "sha256": "D31C872EA4D44E07789658E2D93C3DCA2FAF8854B91A9CE8A571C3A2F820F91D"
+        "bytes": 14303,
+        "sha256": "C25D61618E74C836359B7433358CBEA99AF37DFE48C6DB5A67159BC539F63E27"
       },
       {
         "id": "graphics-template",

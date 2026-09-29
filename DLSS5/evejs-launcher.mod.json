@@ -2,7 +2,7 @@
   "schemaVersion": 3,
   "id": "evejs-dlss5",
   "displayName": "EveJS DLSS5 + ReShade",
-  "version": "0.5.10",
+  "version": "0.5.11",
   "description": "Combined ReShade and DLSS5 client package. Installation is global to the physical client; Neural Rendering preferences are private to each launcher profile.",
   "kind": "client-package",
   "supportedBackends": [

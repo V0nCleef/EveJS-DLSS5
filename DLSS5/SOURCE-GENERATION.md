@@ -1,15 +1,18 @@
-# Local source generation — 0.5.10 / V13 guard
+# Local source generation — 0.5.11 / V13 guard
 
-Package and integration payload version are both **0.5.10**. The original public
-client guard and archive pins are unchanged from 0.5.8. An additional reviewed
-manifest covers the second known build 3396210 client variant.
-The pinned RenoDX add-on changes to 7.0.0-rc8. The bundled ReShade
-6.8.0.10/EveJS V11 DLL and NVIDIA inputs are unchanged. No native DLL was
-rebuilt or manually patched for this release.
+Package and integration payload version are both **0.5.11**. The two known
+build 3396210 archives still have reviewed reference outputs. A compatible
+archive with unrelated mod changes now gets a locally derived output, whose
+original and installed identities are recorded in the client's rollback journal.
+The RenoDX 7.0.0-rc8, ReShade 6.8.0.10/EveJS V11 and NVIDIA binaries are
+unchanged from 0.5.10.
 
-Only an exact supported client archive is accepted. The narrow Python 2.7
-emitter derives local names, literals and control-flow fragments from code
-objects as data. Unsupported code shapes and input hashes are rejected.
+The Python 2.7 builder checks the complete input hash at each stage and requires
+the exact reviewed PYC in each of the two entries it changes. It checks the
+derived replacement PYC hashes before writing an output. An archive with an
+incompatible graphics or startup entry is rejected before any client write.
+The narrow emitter derives local names, literals and control-flow fragments from
+code objects as data. Unsupported code shapes are rejected.
 Original or reconstructed client modules are never imported or executed during
 this build. The existing pinned Python runtime compiles the authenticated
 source templates into replacement code objects.
@@ -23,20 +26,19 @@ author changes no longer require duplicated absolute template line numbers.
 
 ## Generated identity
 
-| Output | Bytes | SHA-256 |
-| --- | ---: | --- |
-| Original archive | 30,757,025 | `89696509EFDC1B081F7371B40CA3D459059DB0E43B5DB328FE373C0F2A9B1A86` |
-| Graphics stage | 30,760,790 | `26E9DD79F78A5CC25C08FFE37EC2689FE646F4745D16C212E8023D51A85A115F` |
-| Complete V13 candidate | 30,763,842 | `0DACCC88471E23A068E08B6191126C27B303470D9BE77AD6DFEF1BB6EDD28275` |
-
-All 12,527 archive entry names/order were retained; exactly the graphics and
-startup entries changed. The manifest records both new PYC identities and all
-eight generator asset hashes. The generator authenticates all authored inputs
-before evaluation, reuses computed digests and closes its file handles.
+The reference manifests pin both known original and output archives. For any
+other compatible archive, the manager records its actual original bytes/hash,
+derives a new output in two stages, and records that output's bytes/hash for
+verification, update and exact restoration. The generated archive is never
+distributed in the package. The generator authenticates all authored inputs
+before evaluation and closes its file handles.
 
 ## Verification boundary
 
 The isolated build used copies of the pinned original code.ccp and Python DLL.
+A disposable archive with one extra unrelated entry retained all 12,528 entry
+positions and bytes outside the two patch targets; the generated ZIP passed CRC
+validation. This is not proof that every other mod's changes are compatible.
 Template tests model state sequences, physical F6, renderer readiness, retries
 and startup scheduling. Installer tests use disposable files and mocked process
 or network results. These establish source/data and control-flow behavior;

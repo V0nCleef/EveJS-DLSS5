@@ -129,9 +129,9 @@ $script:PendingTransactionPath = Join-Path $script:StateRoot "pending-profile-tr
 $script:ProfileTransaction = $null
 $script:ExpectedExeSha256 = "2AAF7A9A8DFCDE85E4ADB50C1ECCD3756A4D29AEB854DFE69629846BA56EE979"
 $script:AlternateExeSha256 = "5A26F6B9838963D6B687D433F4B11CB28BD1CF3A1670AD691D2DF394C88CD575"
-$script:ExpectedPublicPayloadHelperSha256 = "435AF3DBC07C293B926BE4966ECE770EF51A6CDF5CE6A3C12D1D30D0EC6C809B"
-$script:ExpectedPayloadManifestSha256 = "1820123463E47659135068EFBE012A7F15234069BD5293849CDCF97A888DE610"
-$script:AlternatePayloadManifestSha256 = "BB51CA125DCF7E6E4986224EA7B08C25ADC07D50820E60082AC9A2EF179869B6"
+$script:ExpectedPublicPayloadHelperSha256 = "6184810E428C612DC5292ECD9D0BD4A4464A3C8035160D74E47ACE6CC01BE593"
+$script:ExpectedPayloadManifestSha256 = "B8977B2F768A20A1E1510F359984596B68CDFED04E2ECC74D539587C0885A339"
+$script:AlternatePayloadManifestSha256 = "F06B804BB8DCB65F63319F106F4EC87B9C783A5E93582D0BEE0CD33FFFF9C7FC"
 if (Test-Path -LiteralPath $script:ExePath -PathType Leaf) {
     $selectedExeHash = (Get-FileHash -LiteralPath $script:ExePath -Algorithm SHA256).Hash
     if ($selectedExeHash.Equals($script:AlternateExeSha256, [StringComparison]::OrdinalIgnoreCase)) {
@@ -1123,8 +1123,28 @@ function Test-ManifestMatchesPayloadMetadata {
             }
         }
         if (-not ([string]$operation.source).Equals([string]$file.source, [StringComparison]::OrdinalIgnoreCase) -or
-            -not ([string]$operation.component).Equals([string]$file.component, [StringComparison]::Ordinal) -or
-            -not ([string]$operation.installedSha256).Equals([string]$file.sha256, [StringComparison]::OrdinalIgnoreCase) -or
+            -not ([string]$operation.component).Equals([string]$file.component, [StringComparison]::Ordinal)) {
+            return $false
+        }
+
+        # The two reviewed PYC targets can be patched inside a client archive
+        # containing unrelated changes. Its whole-file output identity is
+        # recorded by the journal rather than the reference manifest.
+        $derivedClientGuard = [string]$file.sourceKind -eq 'generated' -and
+            -not ([string]$operation.originalSha256).Equals([string]$file.requiredOriginalSha256, [StringComparison]::OrdinalIgnoreCase)
+        if ($derivedClientGuard) {
+            if ([string]$operation.kind -cne 'replace' -or
+                [string]$operation.installedSha256 -notmatch '^[0-9A-Fa-f]{64}$' -or
+                [string]$operation.originalSha256 -notmatch '^[0-9A-Fa-f]{64}$' -or
+                [Int64]$operation.installedBytes -lt 1048576 -or [Int64]$operation.installedBytes -gt 268435456 -or
+                [Int64]$operation.originalBytes -lt 1048576 -or [Int64]$operation.originalBytes -gt 268435456 -or
+                -not ([string]$operation.requiredOriginalSha256).Equals([string]$operation.originalSha256, [StringComparison]::OrdinalIgnoreCase) -or
+                [Int64]$operation.requiredOriginalBytes -ne [Int64]$operation.originalBytes) {
+                return $false
+            }
+            continue
+        }
+        if (-not ([string]$operation.installedSha256).Equals([string]$file.sha256, [StringComparison]::OrdinalIgnoreCase) -or
             [Int64]$operation.installedBytes -ne [Int64]$file.bytes) {
             return $false
         }

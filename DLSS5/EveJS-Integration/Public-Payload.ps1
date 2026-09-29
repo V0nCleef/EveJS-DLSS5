@@ -99,7 +99,7 @@ function Assert-PublicPayloadManifestContract {
     if ([int]$Manifest.schemaVersion -ne 5) {
         throw "Unsupported public payload schemaVersion '$($Manifest.schemaVersion)'."
     }
-    if (-not ([string]$Manifest.integrationVersion).Equals('0.5.10', [StringComparison]::Ordinal)) {
+    if (-not ([string]$Manifest.integrationVersion).Equals('0.5.11', [StringComparison]::Ordinal)) {
         throw "Unsupported public integrationVersion '$($Manifest.integrationVersion)'."
     }
     if ([int]$Manifest.clientBuild -ne 3396210) {
@@ -425,6 +425,26 @@ function Test-PublicFileRecord {
     }
 }
 
+function Get-PublicObservedArchiveRecord {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Assert-PublicPlainPath -Path $Path | Out-Null
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw 'The client code.ccp archive is missing.'
+    }
+    $item = Get-Item -LiteralPath $Path
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw 'The client code.ccp archive is a reparse point.'
+    }
+    if ([Int64]$item.Length -lt 1048576 -or [Int64]$item.Length -gt 268435456) {
+        throw "The client code.ccp archive size is outside the supported range: $($item.Length)"
+    }
+    return [pscustomobject]@{
+        bytes = [Int64]$item.Length
+        sha256 = Get-Sha256 $Path
+    }
+}
+
 function New-PublicStagedPath {
     param([Parameter(Mandatory = $true)][string]$Destination)
     $directory = Split-Path -Parent $Destination
@@ -462,7 +482,7 @@ function Get-VerifiedPublicArtifact {
             -Uri ([string]$Artifact.url) `
             -OutFile $staged `
             -TimeoutSec 900 `
-            -Headers @{ 'User-Agent' = 'EveJS-DLSS5/0.5.10' } | Out-Null
+            -Headers @{ 'User-Agent' = 'EveJS-DLSS5/0.5.11' } | Out-Null
         Assert-PublicFileRecord -Path $staged -Record $Artifact -Label "Downloaded artifact '$($Artifact.id)'" | Out-Null
         Move-StagedFileIntoPlace -StagedPath $staged -Destination $destination
     } finally {
@@ -675,33 +695,50 @@ function Initialize-EveJSPublicClientGuard {
     Assert-PathInsideRoot -Path $Destination -Root $script:PayloadRoot -BoundaryName 'materialized payload' | Out-Null
     Assert-PublicPlainPath -Path $Destination | Out-Null
     Assert-PublicGeneratorAssets -Manifest $Manifest
-    if (Test-PublicFileRecord -Path $Destination -Record $File) {
-        return
-    }
-    if (Test-Path -LiteralPath $Destination -PathType Leaf) {
-        Remove-Item -LiteralPath $Destination -Force
-    }
-
-    $originalRecord = [pscustomobject]@{
+    $pinnedOriginal = [pscustomobject]@{
         bytes = [Int64]$File.requiredOriginalBytes
         sha256 = [string]$File.requiredOriginalSha256
     }
     $originalPath = Join-Path $script:ClientRoot ([string]$File.destination)
-    if (-not (Test-PublicFileRecord -Path $originalPath -Record $originalRecord)) {
-        # A later repair may need to recreate an evicted cache while the
-        # patched archive is installed. Only the journal's verified original
-        # is acceptable as input; never compile from an unknown live archive.
-        $active = Read-ActiveManifest
-        if ($null -eq $active) {
-            throw 'The client guard requires the exact unmodified build-3396210 code.ccp.'
-        }
+    $active = Read-ActiveManifest
+    $liveRecord = Get-PublicObservedArchiveRecord -Path $originalPath
+    if ($null -ne $active -and [string]$active.status -eq 'installed') {
         $operations = @($active.operations | Where-Object { ([string]$_.destination).Equals([string]$File.destination, [StringComparison]::OrdinalIgnoreCase) })
         if ($operations.Count -ne 1 -or -not $operations[0].backup) {
             throw 'The client guard cannot find exactly one recorded original code.ccp backup.'
         }
-        $originalPath = Join-Path (Get-BackupRoot $active) ([string]$operations[0].backup)
+        $operation = $operations[0]
+        if (-not ([string]$liveRecord.sha256).Equals([string]$operation.installedSha256, [StringComparison]::OrdinalIgnoreCase) -or
+            [Int64]$liveRecord.bytes -ne [Int64]$operation.installedBytes) {
+            throw 'The installed code.ccp differs from its active journal. Restore the owned client file before preparing another version.'
+        }
+        $originalPath = Join-Path (Get-BackupRoot $active) ([string]$operation.backup)
+        $originalRecord = [pscustomobject]@{
+            bytes = [Int64]$operation.originalBytes
+            sha256 = [string]$operation.originalSha256
+        }
+    } else {
+        $originalRecord = $liveRecord
     }
-    Assert-PublicFileRecord -Path $originalPath -Record $originalRecord -Label 'Original client code.ccp' | Out-Null
+    Assert-PublicFileRecord -Path $originalPath -Record $originalRecord -Label 'Client code.ccp source' | Out-Null
+    $dynamicArchive = -not (
+        [Int64]$originalRecord.bytes -eq [Int64]$pinnedOriginal.bytes -and
+        ([string]$originalRecord.sha256).Equals([string]$pinnedOriginal.sha256, [StringComparison]::OrdinalIgnoreCase)
+    )
+    $sameVersionJournal = $null -ne $active -and [string]$active.status -eq 'installed' -and
+        ([string]$active.integrationVersion).Equals([string]$Manifest.integrationVersion, [StringComparison]::Ordinal)
+    if ($sameVersionJournal) {
+        $File.sha256 = [string]$operation.installedSha256
+        $File.bytes = [Int64]$operation.installedBytes
+        $File.requiredOriginalSha256 = [string]$operation.originalSha256
+        $File.requiredOriginalBytes = [Int64]$operation.originalBytes
+    }
+    if (-not $dynamicArchive -or $sameVersionJournal) {
+        if (Test-PublicFileRecord -Path $Destination -Record $File) { return }
+    }
+    if (Test-Path -LiteralPath $Destination -PathType Leaf) {
+        Remove-Item -LiteralPath $Destination -Force
+    }
 
     $pythonRecord = $Manifest.generator.pythonRuntime
     $pythonPath = Join-Path $script:ClientRoot ([string]$pythonRecord.path)
@@ -732,15 +769,17 @@ function Initialize-EveJSPublicClientGuard {
             entry = $Manifest.generator.archiveEntry; embedded = $Manifest.generator.embeddedFilename
             target = $intermediate; targetRecord = $Manifest.generator.intermediateArchive
             className = 'SystemMenu'; methodName = 'ApplyGraphicsSettings'
+            patchedPycSha256 = [string]$Manifest.generator.patchedPycSha256
         },
         [pscustomobject]@{
             source = $intermediate; sourceRecord = $Manifest.generator.intermediateArchive; stub = $startupRecord
             entry = $startup.archiveEntry; embedded = $startup.embeddedFilename
             target = $staged; targetRecord = $File
             className = $startup.className; methodName = $startup.methodName
+            patchedPycSha256 = [string]$startup.patchedPycSha256
         }
     )
-    Write-Step 'Deriving local client source and building the exact V13 guards in two verified stages'
+    Write-Step 'Deriving local client source and building compatible V13 guards in two verified stages'
     try {
         foreach ($stage in $stages) {
             # Do not let a between-stage helper/template change execute before
@@ -748,6 +787,7 @@ function Initialize-EveJSPublicClientGuard {
             Assert-PublicGeneratorAssets -Manifest $Manifest
             Assert-PublicFileRecord -Path $stage.source -Record $stage.sourceRecord -Label 'Client guard stage input' | Out-Null
             $stubPath = Join-Path $script:IntegrationRoot ([string]$stage.stub.path)
+            $expectedOutputHash = if ($dynamicArchive) { 'AUTO' } else { [string]$stage.targetRecord.sha256 }
             $arguments = @(
                 (Get-PublicExtendedPath $pythonPath),
                 (Get-PublicExtendedPath $builderPath),
@@ -757,21 +797,42 @@ function Initialize-EveJSPublicClientGuard {
                 [string]$stage.embedded,
                 (Get-PublicExtendedPath $stage.target),
                 [string]$stage.sourceRecord.sha256,
-                [string]$stage.targetRecord.sha256,
+                $expectedOutputHash,
                 [string]$stage.className,
-                [string]$stage.methodName
+                [string]$stage.methodName,
+                [string]$stage.patchedPycSha256
             )
             Invoke-PublicClientGuardBuilder -RunnerPath $runnerPath -Arguments $arguments
-            # Stage two cannot run on an unverified intermediate, even if a
-            # failed/substituted process returned success without correct output.
-            Assert-PublicFileRecord -Path $stage.target -Record $stage.targetRecord -Label 'Generated client guard stage output' | Out-Null
+            if ($dynamicArchive) {
+                # The authenticated builder checks both the exact source hash
+                # and the reviewed target PYC. Record this archive's derived
+                # hash for the next stage and the client's rollback journal.
+                $stage.targetRecord = Get-PublicObservedArchiveRecord -Path $stage.target
+                if ($stage.target -eq $intermediate) {
+                    $stages[1].sourceRecord = $stage.targetRecord
+                }
+            } else {
+                Assert-PublicFileRecord -Path $stage.target -Record $stage.targetRecord -Label 'Generated client guard stage output' | Out-Null
+            }
         }
-        Assert-PublicFileRecord -Path $intermediate -Record $Manifest.generator.intermediateArchive -Label 'Intermediate archive after generation' | Out-Null
+        Assert-PublicFileRecord -Path $intermediate -Record $stages[0].targetRecord -Label 'Intermediate archive after generation' | Out-Null
         Assert-PublicFileRecord -Path $originalPath -Record $originalRecord -Label 'Original client code.ccp after generation' | Out-Null
         Assert-PublicFileRecord -Path $pythonPath -Record $pythonRecord -Label 'Client Python runtime after generation' -CheckAuthenticode | Out-Null
         Assert-PublicGeneratorAssets -Manifest $Manifest
+        if ($dynamicArchive) {
+            $derived = $stages[1].targetRecord
+            if ($sameVersionJournal -and
+                (-not ([string]$derived.sha256).Equals([string]$File.sha256, [StringComparison]::OrdinalIgnoreCase) -or
+                 [Int64]$derived.bytes -ne [Int64]$File.bytes)) {
+                throw 'Regenerated code.ccp does not match the installed journal.'
+            }
+            $File.sha256 = [string]$derived.sha256
+            $File.bytes = [Int64]$derived.bytes
+            $File.requiredOriginalSha256 = [string]$originalRecord.sha256
+            $File.requiredOriginalBytes = [Int64]$originalRecord.bytes
+        }
         Move-StagedFileIntoPlace -StagedPath $staged -Destination $Destination
-        Write-Okay 'locally derived archive matches the pinned V13 candidate bytes; live rendering acceptance is still required'
+        Write-Okay 'locally derived archive preserves the client source and verified V13 target code; live rendering acceptance is still required'
     } finally {
         foreach ($path in @($intermediate, $staged)) {
             if (Test-Path -LiteralPath $path -PathType Leaf) {

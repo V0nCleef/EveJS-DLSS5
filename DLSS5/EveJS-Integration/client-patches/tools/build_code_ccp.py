@@ -129,8 +129,8 @@ def replace_direct_child(code, name, replacement):
     return clone_with_consts(code, consts)
 
 
-if len(sys.argv) not in (8, 10):
-    fail('usage: SCRIPT ARCHIVE STUB ENTRY EMBEDDED_FILENAME OUTPUT EXPECTED_INPUT_SHA256 EXPECTED_OUTPUT_SHA256 [CLASS METHOD]')
+if len(sys.argv) not in (8, 10, 11):
+    fail('usage: SCRIPT ARCHIVE STUB ENTRY EMBEDDED_FILENAME OUTPUT EXPECTED_INPUT_SHA256 EXPECTED_OUTPUT_SHA256 [CLASS METHOD [EXPECTED_PATCHED_PYC_SHA256]]')
 
 archive_path = utf8_path(sys.argv[1])
 stub_path = utf8_path(sys.argv[2])
@@ -140,6 +140,9 @@ output_path = utf8_path(sys.argv[5])
 expected_input_hash = sys.argv[6].upper()
 expected_output_hash = sys.argv[7].upper()
 class_name, method_name = ('SystemMenu', 'ApplyGraphicsSettings') if len(sys.argv) == 8 else (sys.argv[8], sys.argv[9])
+expected_patched_pyc_hash = sys.argv[10].upper() if len(sys.argv) == 11 else None
+if expected_output_hash == 'AUTO' and expected_patched_pyc_hash is None:
+    fail('dynamic archive generation requires the reviewed patched PYC hash')
 allowed_targets = {
     ('SystemMenu', 'ApplyGraphicsSettings'): 'eve/client/script/ui/shared/systemMenu/systemmenu.pyj',
     ('DeviceMgr', 'CreateDevice'): 'carbonui/services/device.pyj',
@@ -171,9 +174,11 @@ if central_offset + central_size != eocd_offset:
 target_central_offset = None
 target_local_offset = None
 target_compressed_size = None
+target_uncompressed_size = None
+target_crc = None
 central_cursor = central_offset
 for index in range(total_entries):
-    if archive[central_cursor:central_cursor + 4] != 'PK\x01\x02':
+    if central_cursor + 46 > eocd_offset or archive[central_cursor:central_cursor + 4] != 'PK\x01\x02':
         fail('invalid central directory record %d' % index)
     flags = u16(archive, central_cursor + 8)
     method = u16(archive, central_cursor + 10)
@@ -183,7 +188,11 @@ for index in range(total_entries):
     entry_comment_length = u16(archive, central_cursor + 32)
     disk_start = u16(archive, central_cursor + 34)
     local_offset = u32(archive, central_cursor + 42)
+    if central_cursor + 46 + filename_length + extra_length + entry_comment_length > eocd_offset:
+        fail('central directory record exceeds its boundary')
     filename = archive[central_cursor + 46:central_cursor + 46 + filename_length]
+    if local_offset >= central_offset:
+        fail('ZIP entry local header is outside the data area')
     if filename == entry_name:
         if target_central_offset is not None:
             fail('target ZIP entry appears more than once')
@@ -192,6 +201,8 @@ for index in range(total_entries):
         target_central_offset = central_cursor
         target_local_offset = local_offset
         target_compressed_size = compressed_size
+        target_uncompressed_size = u32(archive, central_cursor + 24)
+        target_crc = u32(archive, central_cursor + 16)
     central_cursor += 46 + filename_length + extra_length + entry_comment_length
 if central_cursor != eocd_offset:
     fail('central directory record count or length mismatch')
@@ -204,18 +215,28 @@ if archive[local_cursor:local_cursor + 4] != 'PK\x03\x04':
 local_flags = u16(archive, local_cursor + 6)
 local_method = u16(archive, local_cursor + 8)
 local_compressed_size = u32(archive, local_cursor + 18)
+local_uncompressed_size = u32(archive, local_cursor + 22)
 local_filename_length = u16(archive, local_cursor + 26)
 local_extra_length = u16(archive, local_cursor + 28)
 local_filename = archive[local_cursor + 30:local_cursor + 30 + local_filename_length]
 if local_flags != 0 or local_method != 0 or local_extra_length != 0 or local_filename != entry_name:
     fail('target local ZIP header is not the expected simple stored entry')
-if local_compressed_size != target_compressed_size:
-    fail('target local and central compressed sizes differ')
+if (local_compressed_size != target_compressed_size or
+        local_uncompressed_size != target_uncompressed_size or
+        local_uncompressed_size != target_compressed_size):
+    fail('target local and central stored sizes differ')
+if target_compressed_size > 1048576:
+    fail('target ZIP entry is larger than the reviewed code boundary')
 
 payload_offset = local_cursor + 30 + local_filename_length + local_extra_length
+if payload_offset + target_compressed_size > central_offset:
+    fail('target ZIP entry exceeds the data area')
 original_pyj = archive[payload_offset:payload_offset + target_compressed_size]
+if ((binascii.crc32(original_pyj) & 0xffffffff) != u32(archive, local_cursor + 14) or
+        target_crc != u32(archive, local_cursor + 14)):
+    fail('target ZIP entry CRC does not match its headers')
 original_pyc = zlib.decompress(original_pyj)
-if len(original_pyc) < 9:
+if len(original_pyc) < 9 or len(original_pyc) > 1048576:
     fail('target PYC is truncated')
 
 original_module = marshal.loads(original_pyc[8:])
@@ -236,6 +257,8 @@ if original_method.co_argcount != replacement_method.co_argcount:
 patched_class = replace_direct_child(original_class, method_name, replacement_method)
 patched_module = replace_direct_child(original_module, class_name, patched_class)
 patched_pyc = original_pyc[:8] + marshal.dumps(patched_module, 2)
+if expected_patched_pyc_hash is not None and sha256(patched_pyc) != expected_patched_pyc_hash:
+    fail('generated target PYC SHA-256 mismatch: %s' % sha256(patched_pyc))
 patched_pyj = zlib.compress(patched_pyc, 9)
 patched_crc = binascii.crc32(patched_pyj) & 0xffffffff
 delta = len(patched_pyj) - len(original_pyj)
@@ -271,7 +294,7 @@ new_eocd_offset = eocd_offset + delta
 put_u32(output, new_eocd_offset + 16, new_central_offset)
 output_bytes = str(output)
 output_hash = sha256(output_bytes)
-if output_hash != expected_output_hash:
+if expected_output_hash != 'AUTO' and output_hash != expected_output_hash:
     fail('generated output SHA-256 mismatch: %s' % output_hash)
 with open(output_path, 'wb') as destination:
     destination.write(output_bytes)
