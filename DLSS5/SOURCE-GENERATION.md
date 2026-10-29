@@ -1,6 +1,7 @@
-# Local source generation — 0.5.11 / V13 guard
+# Local source generation — package 0.5.12 / payload 0.5.11 / V13 guard
 
-Package and integration payload version are both **0.5.11**. The two known
+Package version is **0.5.12**; integration payload version remains **0.5.11**.
+This release changes verification and removal scripts, with no renderer-source or binary change. The two known
 build 3396210 archives still have reviewed reference outputs. A compatible
 archive with unrelated mod changes now gets a locally derived output, whose
 original and installed identities are recorded in the client's rollback journal.

@@ -198,9 +198,9 @@ foreach ($relative in $shippingFiles) {
 }
 
 $descriptor = [IO.File]::ReadAllText((Get-SafePackagePath 'evejs-launcher.mod.json'), $utf8) | ConvertFrom-Json
-if ([int]$descriptor.schemaVersion -ne 3 -or $descriptor.id -ne 'evejs-dlss5' -or $descriptor.version -ne '0.5.11' -or
+if ([int]$descriptor.schemaVersion -ne 3 -or $descriptor.id -ne 'evejs-dlss5' -or $descriptor.version -ne '0.5.12' -or
     $descriptor.kind -cne 'client-package' -or $descriptor.activation.strategy -cne 'client_package' -or
-    [int]$descriptor.launcherApi.version -ne 1 -or $descriptor.launcherApi.minLauncherVersion -cne '1.0.68' -or
+    [int]$descriptor.launcherApi.version -ne 1 -or $descriptor.launcherApi.minLauncherVersion -cne '1.0.76' -or
     $descriptor.launcherApi.helper.runtime -cne 'powershell' -or
     $descriptor.launcherApi.helper.path -cne 'EveJS-Integration/Invoke-LauncherMod.ps1') {
     throw 'Unexpected public package identity or helper contract.'

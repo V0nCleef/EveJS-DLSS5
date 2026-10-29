@@ -1752,8 +1752,9 @@ function Restore-OwnedBatchSettings {
 }
 
 function Assert-OwnedConfigRestoration {
-    param([Parameter(Mandatory = $true)]$Manifest)
-    if (-not (Test-PrimaryServerDetached $Manifest) -and (Test-Path -LiteralPath $script:EveJSRoot -PathType Container)) {
+    param([Parameter(Mandatory = $true)]$Manifest,[switch]$ClientOnly)
+    $serverSettingsRetained=($Manifest.PSObject.Properties.Name -contains 'serverSettingsRetained' -and [bool]$Manifest.serverSettingsRetained)
+    if (-not $ClientOnly -and -not $serverSettingsRetained -and -not (Test-PrimaryServerDetached $Manifest) -and (Test-Path -LiteralPath $script:EveJSRoot -PathType Container)) {
         if (-not (Test-Path -LiteralPath $script:ConfigPath -PathType Leaf)) { throw 'The former server configuration is missing after restoration.' }
         $backup=Assert-ClientScopedStatePath (Join-Path (Get-BackupRoot $Manifest) ([string]$Manifest.config.backup))
         $original=[IO.File]::ReadAllText($backup)
@@ -2305,7 +2306,7 @@ function Set-EveJSRootContext {
 }
 
 function Assert-RestoreBackups {
-    param([Parameter(Mandatory = $true)]$Manifest)
+    param([Parameter(Mandatory = $true)]$Manifest,[switch]$ClientOnly)
 
     $backupRoot = Get-BackupRoot $Manifest
     if (-not (Test-Path -LiteralPath $backupRoot -PathType Container)) {
@@ -2327,10 +2328,12 @@ function Assert-RestoreBackups {
         }
     }
 
-    $configBackup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$Manifest.config.backup))
-    if (-not (Test-Path -LiteralPath $configBackup -PathType Leaf) -or
-        (Get-Sha256 $configBackup) -ne [string]$Manifest.config.originalSha256) {
-        throw "Config backup is missing or has the wrong hash: $configBackup"
+    if (-not $ClientOnly) {
+        $configBackup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$Manifest.config.backup))
+        if (-not (Test-Path -LiteralPath $configBackup -PathType Leaf) -or
+            (Get-Sha256 $configBackup) -ne [string]$Manifest.config.originalSha256) {
+            throw "Config backup is missing or has the wrong hash: $configBackup"
+        }
     }
     if ($Manifest.PSObject.Properties.Name -contains "reshadeConfig" -and
         $null -ne $Manifest.reshadeConfig -and [bool]$Manifest.reshadeConfig.originalExists) {
@@ -2884,7 +2887,7 @@ function Invoke-Verify {
         if ($exeHash -ne [string]$manifest.executable.sha256 -or $exeHash -ne $script:ExpectedExeSha256) {
             throw "exefile.exe changed unexpectedly during rollback."
         }
-        Assert-OwnedConfigRestoration -Manifest $manifest
+        Assert-OwnedConfigRestoration -Manifest $manifest -ClientOnly:$ClientOnly
         Write-Okay 'Owned configuration keys were restored; unowned settings and later edits are preserved.'
 
         Write-Okay "every replaced file matches its original hash and every added file is absent"
@@ -3151,7 +3154,7 @@ function Test-RestoreDrift {
 }
 
 function Invoke-Restore {
-    param([switch]$PhysicalOnly)
+    param([switch]$PhysicalOnly,[switch]$ClientOnly)
     if (-not $PhysicalOnly) {
         $candidate=Read-ActiveManifestRaw
         if (Test-HasServerAttachments $candidate) {
@@ -3167,12 +3170,12 @@ function Invoke-Restore {
         throw "No DLSS5 install journal exists."
     }
     if ($manifest.status -in @("restored", "rolledBack")) {
-        Invoke-Verify
+        Invoke-Verify -ClientOnly:$ClientOnly
         Write-Okay 'The integration was already restored; no cleanup was repeated.'
         return
     }
 
-    Assert-RestoreBackups -Manifest $manifest
+    Assert-RestoreBackups -Manifest $manifest -ClientOnly:$ClientOnly
     $backupRoot = Get-BackupRoot $manifest
     $configBackup = Assert-ClientScopedStatePath -Path (Join-Path $backupRoot ([string]$manifest.config.backup))
 
@@ -3194,18 +3197,38 @@ function Invoke-Restore {
         }
     }
     Restore-ReShadeConfig -Manifest $manifest
-    if (-not (Test-PrimaryServerDetached $manifest)) { Restore-OwnedBatchSettings -Manifest $manifest }
+    if (-not $ClientOnly -and -not (Test-PrimaryServerDetached $manifest)) { Restore-OwnedBatchSettings -Manifest $manifest }
 
     if ((Get-Sha256 $script:ExePath) -ne [string]$manifest.executable.sha256) {
         throw "exefile.exe no longer matches the recorded baseline after restore."
     }
 
     $manifest.status = "restored"
+    if ($ClientOnly) {
+        Add-OrSetProperty $manifest 'serverSettingsRetained' $true
+        if (Test-HasServerAttachments $manifest) {
+            foreach ($attachment in @($manifest.serverAttachments)) { $attachment.status='detached' }
+        }
+    }
     $manifest.restoredAtUtc = [DateTime]::UtcNow.ToString("o")
     Write-JsonAtomic -Value $manifest -Path $script:ActiveManifestPath
-    Invoke-Verify
+    Invoke-Verify -ClientOnly:$ClientOnly
     Write-Host ""
-    Write-Host "Original client files and EveJS config restored. Backups and audit state were retained." -ForegroundColor Green
+    if ($ClientOnly) {
+        Write-Host "Original client files restored. Server settings, private preferences and rollback backups were retained." -ForegroundColor Green
+    } else {
+        Write-Host "Original client files and EveJS config restored. Backups and audit state were retained." -ForegroundColor Green
+    }
+}
+
+function Invoke-UninstallClient {
+    # Removal is global to the physical client. The currently selected server
+    # need not be attached, and the former server need not exist anymore.
+    $manifest=Read-ActiveManifestRaw
+    if ($null -eq $manifest) { throw 'No DLSS5 install journal exists for this physical client.' }
+    Invoke-InRecordedServerContext ([string]$manifest.evejsRoot) ([string]$manifest.workspaceRoot) {
+        Invoke-Restore -PhysicalOnly -ClientOnly
+    }
 }
 
 function Invoke-Status {
@@ -3286,7 +3309,7 @@ try {
         "Verify" { Invoke-Verify }
         "VerifyClient" { Invoke-Verify -ClientOnly }
         "Runtime" { Invoke-RuntimeCheck -RequestedProcessId $ProcessId }
-        "Restore" { Invoke-Restore }
+        "Restore" { Invoke-UninstallClient }
         "Recover" { Invoke-RecoverProfileTransaction; Invoke-RecoverServerAttachments }
     }
 } catch {

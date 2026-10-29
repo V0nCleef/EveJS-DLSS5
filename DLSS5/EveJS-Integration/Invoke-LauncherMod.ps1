@@ -5,7 +5,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:AdapterVersion = '0.5.11'
+$script:AdapterVersion = '0.5.12'
 . (Join-Path $PSScriptRoot 'ReShade-Lists.ps1')
 $script:Utf8 = New-Object Text.UTF8Encoding($false)
 $script:PackageRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot)).TrimEnd('\')
@@ -164,7 +164,7 @@ function Get-ProfilePreparation {
     # that draft over legacy values instead of treating a partial file as a
     # completed migration and discarding the remaining preferences.
     $source=if ($privateValues.Contains("addon`0addonpath")) { $destination }
-        elseif (Test-Path -LiteralPath $legacy -PathType Leaf) { $legacy } else { $shared }
+        elseif (-not $legacy.Equals($destination,[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $legacy -PathType Leaf)) { $legacy } else { $shared }
     $values=Read-IniValues $source
     if (-not $source.Equals($destination,[StringComparison]::OrdinalIgnoreCase)) {
         foreach ($key in @($privateValues.Keys)) { $values[$key]=$privateValues[$key] }
@@ -265,10 +265,6 @@ try {
     $journal=Read-ClientJournal $client
     if ([string]$request.action -eq 'prepare_profile') {
         if ($null -eq $journal -or [string]$journal.status -ne 'installed') { throw 'Install and verify the global DLSS5 package before preparing a profile.' }
-        if ($journal.PSObject.Properties.Name -contains 'serverAttachments') {
-            $attached=@($journal.serverAttachments | Where-Object { ([string]$_.root).Equals($evejs,[StringComparison]::OrdinalIgnoreCase) -and $_.status -eq 'attached' })
-            if ($attached.Count -ne 1) { throw 'This server is not attached to the shared DLSS5 installation.' }
-        }
         $prepared=Get-ProfilePreparation -Request $request -Client $client
         $reply.contributions=@($prepared.contributions)
         $reply.environment=$prepared.environment
@@ -276,7 +272,10 @@ try {
     } else {
         switch ([string]$request.action) {
             'install' { Invoke-BinaryManager -Action Ensure -Client $client -EveJS $evejs }
-            'verify' { Invoke-BinaryManager -Action Verify -Client $client -EveJS $evejs }
+            'verify' {
+                $ownerRoot=if ($null -ne $journal) { [string]$journal.evejsRoot } else { $evejs }
+                Invoke-BinaryManager -Action VerifyClient -Client $client -EveJS $ownerRoot
+            }
             {$_ -in @('prepare_disable','prepare_remove')} {
                 if ($null -ne $request.profile) { throw 'DLSS5 removal is global to the physical client, not one profile.' }
                 $removalRoot=if ($null -ne $journal -and $journal.PSObject.Properties.Name -contains 'serverAttachments') { $evejs } elseif ($null -ne $journal) { [string]$journal.evejsRoot } else { $evejs }

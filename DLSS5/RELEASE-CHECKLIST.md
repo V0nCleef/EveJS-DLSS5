@@ -1,4 +1,13 @@
-# 0.5.11 release verification
+# 0.5.12 release verification
+
+- Launcher 1.0.76 removes DLSS lifecycle checks from character launch; the user confirmed character startup and DLSS operation with the tested launcher and local lifecycle fixes.
+- Verification uses the recorded physical-client context even when the selected server has no attachment.
+- Global removal works with the former server absent and without requiring its configuration backup. Client-file drift checks and verified replacement-file backups remain required before any restore.
+- Disposable copied-client checks cover restore, repeat removal, ordinary DLSS preservation and refusal to overwrite a changed DLL. Live client binaries are not changed by these checks.
+- Private graphics preferences use one stable profile directory across EveJS upgrades. A partial settings draft retains the shared defaults on first preparation.
+- Package version is 0.5.12; renderer payload identity remains 0.5.11. NVIDIA, RenoDX, ReShade and generated-client payloads are unchanged.
+
+## Retained renderer and packaging verification
 
 - Schema 3 mod package; launcher integration requires 1.0.68 or newer.
 - Adapter manager calls use the launcher's remaining operation budget instead of a fixed 110-second cutoff.

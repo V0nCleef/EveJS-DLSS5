@@ -1,3 +1,11 @@
+# 0.5.12 — 2026-10-29
+
+- Verify the installed physical client without requiring the currently selected EveJS server to be attached.
+- Uninstall globally from the physical client even when the selected server was never attached or the original server has been removed. Restore verified client originals while retaining server settings, private preferences and rollback backups.
+- Keep drift and backup checks before restoring client files, and preserve ordinary DLSS and unrelated client files.
+- Requires EveJS Launcher 1.0.76, which removes DLSS installation, receipt and server-attachment checks from character startup and keeps profile graphics settings across server upgrades.
+- The renderer payload remains 0.5.11. No NVIDIA, RenoDX, ReShade or generated-client payload change is included.
+
 # 0.5.11 — 2026-09-29
 
 - Generate the two DLSS5 client guard entries from a compatible build 3396210 `code.ccp` even when unrelated mods have changed the archive.

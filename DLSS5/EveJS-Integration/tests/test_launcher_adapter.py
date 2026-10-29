@@ -92,13 +92,13 @@ def test_profile_preparation_preserves_f6_off_and_other_values_without_shared_wr
     assert all(row["base"] == "profile" for row in result["contributions"])
     after = {path: path.read_bytes() for path in context.client_root.parent.rglob("*") if path.is_file()}
     assert before == after
-    if origin != "private":
+    if paths[origin] != paths["private"]:
         assert not paths["private"].exists()  # Host applies the proposal separately.
 
 
-def test_existing_private_values_take_precedence_over_legacy_profile(tmp_path, profile):
+def test_existing_private_values_take_precedence_over_shared_defaults(tmp_path, profile):
     context, _, _ = profile
-    put(context.profile_root / "DLSS5/ReShade.ini", "[RenoDX.DLSS5]\nNeuralUplift=0\nCustom=preserve\n")
+    put(context.client_root / "bin64/ReShade.ini", "[RenoDX.DLSS5]\nNeuralUplift=0\nCustom=preserve\n")
     put(context.mod_data_root / "ReShade.ini", "[RenoDX.DLSS5]\nNeuralUplift=1\n")
     result = invoke(tmp_path, profile)
     assert result["success"]
@@ -140,7 +140,8 @@ def test_asset_paths_preserve_escaped_commas_during_migration(tmp_path, profile,
     values = {tuple(row["key"]): row["value"] for row in result["contributions"]}
     for kind in ("Shaders", "Textures"):
         key = "EffectSearchPaths" if kind == "Shaders" else "TextureSearchPaths"
-        expected = str(source).replace(",", ",,") + "\\.\\" + kind + ",,Extra,C:\\User,," + kind
+        expected = (str(source).replace(",", ",,") + "\\.\\" + kind + ",,Extra,C:\\User,," + kind
+                    if origin == "shared" else ".\\" + kind + ",,Extra,C:\\User,," + kind)
         assert values[("GENERAL", key)] == expected
     assert (source / "ReShade.ini").read_text() == original
 
@@ -153,10 +154,12 @@ def test_legacy_preset_and_relative_asset_locations_survive_private_migration(tm
     result = invoke(tmp_path, profile)
     assert result["success"], result
     values = {(row["path"], tuple(row["key"])): row["value"] for row in result["contributions"]}
-    assert values[("ReShadePreset.ini", ("Techniques",))] == "MyEffect"
-    assert values[("ReShadePreset.ini", ("MyEffect.fx", "Amount"))] == "0.7"
-    assert values[("ReShade.ini", ("GENERAL", "PresetPath"))] == str(context.mod_data_root / "ReShadePreset.ini")
-    assert values[("ReShade.ini", ("GENERAL", "EffectSearchPaths"))] == str(legacy) + "\\.\\Shaders,C:\\UserShaders"
+    # The stable private folder is already the legacy directory: no move or
+    # preset copy is necessary, and its relative paths retain their meaning.
+    assert context.mod_data_root == legacy
+    assert values[("ReShade.ini", ("GENERAL", "PresetPath"))] == ".\\MyPreset.ini"
+    assert values[("ReShade.ini", ("GENERAL", "EffectSearchPaths"))] == ".\\Shaders,C:\\UserShaders"
+    assert (legacy / "MyPreset.ini").read_text().startswith("Techniques=MyEffect")
     assert (legacy / "MyPreset.ini").exists()
 
 
@@ -252,7 +255,7 @@ def test_two_server_receipts_do_not_overwrite_each_other(tmp_path, profile):
     assert json.loads(second_path.read_bytes())["evejsRoot"] == str(other_root)
 
 
-def test_removing_one_attachment_reports_it_detached_while_other_keeps_payload(tmp_path, profile):
+def test_global_removal_reports_restored_for_all_server_attachments(tmp_path, profile):
     context, _, request = profile
     request.update(action="prepare_remove", profile=None)
     journal_path = context.client_root.parent / "_evejs/dlss5/install/active-install.json"
@@ -264,14 +267,34 @@ def test_removing_one_attachment_reports_it_detached_while_other_keeps_payload(t
     manager.write_text(r'''param($Action,$Profile,$ClientRoot,$EveJSRootPath,$WorkspaceRoot)
 $path=Join-Path (Split-Path -Parent $ClientRoot) '_evejs\dlss5\install\active-install.json'
 $journal=Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-foreach ($row in $journal.serverAttachments) { if ($row.root -eq $EveJSRootPath) { $row.status='detached' } }
+if ($Action -ne 'Restore') { throw 'Expected physical client restore' }
+$journal.status='restored'
+foreach ($row in $journal.serverAttachments) { $row.status='detached' }
 $journal | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $path
 ''')
     result = invoke(tmp_path, profile)
     assert result["success"] and result["receipt"]["state"] == "restored", result
     current = json.loads(journal_path.read_text(encoding="utf-8-sig"))
-    assert current["status"] == "installed"
-    assert [row["status"] for row in current["serverAttachments"]] == ["detached", "attached"]
+    assert current["status"] == "restored"
+    assert [row["status"] for row in current["serverAttachments"]] == ["detached", "detached"]
+
+
+def test_verify_uses_physical_client_without_a_selected_server_attachment(tmp_path, profile):
+    context, _, request = profile
+    request.update(action="verify", profile=None)
+    journal_path = context.client_root.parent / "_evejs/dlss5/install/active-install.json"
+    journal = json.loads(journal_path.read_text())
+    journal["evejsRoot"] = str(tmp_path / "deleted-original-server")
+    journal["serverAttachments"] = []
+    journal_path.write_text(json.dumps(journal))
+    manager = context.mod_folder / "EveJS-Integration/Manage-EveJSDLSS5.ps1"
+    manager.write_text(r'''param($Action,$Profile,$ClientRoot,$EveJSRootPath,$WorkspaceRoot)
+if ($Action -ne 'VerifyClient') { throw 'Server verification must not run' }
+$journal=Get-Content -LiteralPath (Join-Path (Split-Path -Parent $ClientRoot) '_evejs\dlss5\install\active-install.json') -Raw | ConvertFrom-Json
+if ($EveJSRootPath -ne $journal.evejsRoot) { throw 'Wrong journal context' }
+''')
+    result = invoke(tmp_path, profile)
+    assert result["success"] and result["receipt"]["state"] == "active", result
 
 
 def test_recovery_with_missing_original_server_does_not_uninstall_other_attachment(tmp_path, profile):
