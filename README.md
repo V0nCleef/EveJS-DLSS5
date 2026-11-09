@@ -1,18 +1,20 @@
-# Install DLSS5 + ReShade 0.5.12
+# Install DLSS5 + ReShade 0.5.13
 
 **Use these steps if you play through EveJS Launcher. ReShade is already included.**
 
 You need a working EveJS setup on Windows and **EveJS Launcher 1.0.76 or newer**. This mod supports EVE client build **3396210**.
 
-Version 0.5.12 fixes verification and global removal after changing EveJS server folders. Launcher 1.0.76 uses the installed client renderer without server-version, installation-receipt or attachment checks during character startup. The renderer payload stays at 0.5.11; this update changes no NVIDIA, RenoDX, ReShade or generated-client renderer files.
+Version 0.5.13 fixes current RenoDX Neural Rendering startup-state detection and updates ReShade to 6.8.0.11. The mod helper normalizes private profiles to F6; Launcher 1.0.78 supplies the separate fix for its direct launch path. NVIDIA, RenoDX and generated client-code payload bytes are unchanged. On older Launcher profiles, use the NR toggle key shown by RenoDX (it may still be NUM PLUS).
 
-**Already have 0.5.8, 0.5.9, 0.5.10 or 0.5.11?** Close all EVE clients, open **Mods**, then use the gold **Update** button on the DLSS5 row. Let the launcher finish. If the row was previously off after a failed install, switch it on after the update and check for **CONFIGURED ON** before launching again. Keep your recovery backups. The steps below are for a new install or a manual upgrade from 0.5.7.
+**Already have 0.5.8 through 0.5.12?** Close all EVE clients, open **Mods**, then use the gold **Update** button on the DLSS5 row. Let the launcher finish. If the row was previously off after a failed install, switch it on after the update and check for **CONFIGURED ON** before launching again. Keep your recovery backups. The steps below are for a new install or a manual upgrade from 0.5.7.
 
 This package supports both known build 3396210 client variants, including the client used with EveJS 0.12.9, and compatible client archives changed by other mods. It accepts the `eve.js` and `evejs-repo` server package names. If another mod changed one of the same two EVE code entries, the installer stops and leaves the client untouched until that specific conflict is resolved.
 
+**Known limitation:** automatic NR synchronization during graphics changes can refuse safely. Before switching away from DLSS, physically turn NR OFF using F6 when configured, or the NR toggle key shown by RenoDX. The exact tested download retains its historical local-candidate labels; it was approved for publication without a rebuild.
+
 ## 1. Download the mod
 
-Click **[Download EveJS-DLSS5-0.5.12.zip](https://github.com/V0nCleef/EveJS-DLSS5/releases/download/v0.5.12/EveJS-DLSS5-0.5.12.zip)**.
+Click **[Download EveJS-DLSS5-0.5.13.zip](https://github.com/V0nCleef/EveJS-DLSS5/releases/download/v0.5.13/EveJS-DLSS5-0.5.13.zip)**.
 
 Save it somewhere you can find, such as **Downloads**.
 
@@ -53,7 +55,7 @@ Updating the launcher alone does **not** update DLSS5 0.5.7. It also does not ad
 
 1. Open **Mods** in the launcher.
 2. Click **Add ZIP**.
-3. Find the **EveJS-DLSS5-0.5.12.zip** file you downloaded in step 1.
+3. Find the **EveJS-DLSS5-0.5.13.zip** file you downloaded in step 1.
 4. Select it and click **Open**.
 5. Wait for **EveJS DLSS5 + ReShade** to appear in the mod list. It starts switched off.
 

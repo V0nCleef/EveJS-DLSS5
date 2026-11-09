@@ -1,77 +1,26 @@
 {
-  "status": "native-candidate-manual-client-validation-pending",
+  "status": "local-candidate-rendering-and-physical-f6-qualified-automatic-sync-unqualified",
   "upstream": "https://github.com/crosire/reshade.git",
   "commit": "18deaa52de0c425a78b329e9cb3c497281cd00ec",
   "tag": "v6.8.0",
-  "patch": "reshade-6.8.0-evejs-v11.patch",
-  "patchSha256": "02999710DD90F22D410CA25260C391E943D8D45DA7FAC57B8D50BA9685325E01",
-  "patchFiles": 10,
-  "patchAdditions": 613,
-  "patchDeletions": 15,
-  "patchPristineUpstreamRoundtripVerified": true,
-  "patchRoundtripMatchedSourceFiles": 10,
-  "versionHeader": "version-6.8.0.10.h",
-  "versionHeaderSha256": "8DF866366AE60CA4A206DD0DEA610CDFEC0D475DA72CD696F71559885C46EBD4",
-  "preBuildVersionIncrementDisabled": true,
+  "patch": "reshade-6.8.0-evejs-v12.patch",
+  "patchSha256": "4D15B25CF58252DBE3BAB95E73BB75A8011CAB834801093DF061821960509D08",
+  "versionHeader": "version-6.8.0.11.h",
+  "versionHeaderSha256": "7275B979E788A724F8E72DA4C81381BC030228244FD76FF92C8CC8DE55D4D3C0",
   "binary": "../../EveJS-Integration/payload/reshade/ReShade64.dll",
-  "binaryBytes": 5594112,
-  "binarySha256": "26EBDD0C2AE67EED8D305BC8B7A3A67B606F74D19979EFDFE6E584ACB27B78BF",
-  "binaryVersion": "6.8.0.10",
+  "binaryBytes": 5594624,
+  "binarySha256": "FB1011F2F13A250FD5881415840433F8B77EC27F862338FFDD097DC511388C3A",
+  "binaryVersion": "6.8.0.11",
   "binaryProductVersion": "6.8.0 UNOFFICIAL",
   "binaryAuthenticode": "NotSigned",
   "binaryMachine": "x64",
-  "binaryPeTimestampHex": "6A99F89A",
-  "byteReproducibleBuildProven": false,
-  "manualGameValidationComplete": false,
-  "previousBaselineBinarySha256": "8BAD71B96C4CB92CE04E18D661DCC508B30258C196F4CF01B639E58326BD6471",
-  "previousExportNamesAndOrdinalsPreserved": true,
-  "previousExportSlotsPreserved": 501,
-  "exportCount": 496,
+  "previousBinarySha256": "26EBDD0C2AE67EED8D305BC8B7A3A67B606F74D19979EFDFE6E584ACB27B78BF",
+  "previousNamedAndUnnamedExportOrdinalsPreserved": true,
   "exportSlotCount": 502,
-  "nonameExportCount": 6,
-  "processLocalF6Export": "EveJSDLSS5InjectF6State",
-  "processLocalF6ExportOrdinal": 75,
-  "processLocalNRStateExport": "EveJSDLSS5QueryNRState",
-  "processLocalNRStateExportOrdinal": 502,
+  "namedExportCount": 496,
+  "importedDllSetUnchanged": true,
   "nrStateAbiVersion": 1,
   "nrStateSnapshotBytes": 32,
-  "newImports": [],
-  "msbuild": "17.14.40.60911",
-  "msvcToolsetDirectory": "14.44.35207",
-  "compilerVersion": "19.44.35228.0",
-  "linkerVersion": "14.44.35228.0",
-  "windowsSdk": "10.0.26100.0",
-  "rcFxcVersion": "10.0.26100.7705",
-  "offlineBuild": true,
-  "gladGeneratedSources": "preserved V10 checkout generated C/header files originally retained from V9, no generator or download",
-  "releaseApp": {
-    "sha256": "05B309B8D7EF0FEFC643A7769B030F908F41A0F2E7E2282F46D4A8E9684AF997",
-    "bytes": 3326464,
-    "version": "6.8.0.10",
-    "buildExitCode": 0,
-    "warnings": 0,
-    "errors": 0,
-    "elapsedSeconds": 15.34,
-    "buildScope": "final successful incremental build after unchanged dependency compilation"
-  },
-  "releaseDllBuild": {
-    "exitCode": 0,
-    "warnings": 29,
-    "errors": 0,
-    "elapsedSeconds": 48.52
-  },
-  "selfTest": {
-    "argument": "-evejs-dlss5-state-self-test",
-    "exitCode": 0,
-    "deterministicProductionF6PolicyChecks": 294,
-    "deterministicProductionNRStateChecks": 42,
-    "readonlyStateExportChecksPassed": true,
-    "windowHidden": true,
-    "physicalInputGenerated": false,
-    "syntheticF6Injected": false,
-    "foregroundChanged": false,
-    "logSha256": "F75492FC322D679A47B4D6CF55FD18820A8B1EE9225B2C17EA0CDDFDB22BCF1C"
-  },
   "sourceSha256": {
     "res/exports.def": "ED5D39F4C3EB620C0BDAFADBABB811322C9922CAA4687BD4086A8E1E37BCC30B",
     "source/d3d12/d3d12_device.cpp": "1331FDE8A2E53E92E5E8D5EA199F8B449C9E7F6856DE63DCB56FF6D6DDF9E671",
@@ -81,9 +30,9 @@
     "source/evejs_dlss5_f6_policy.hpp": "041AD6A8E1CE264ADC9EAE9CE8083D8D47632329A4A5F2941ADD82B75152D596",
     "source/addon.cpp": "AE04E6034416F44C1E96F743E831E54DAA054D00EABDF72FE73CAADD793C9734",
     "source/addon_manager.cpp": "D0EC6D9F56DEDDB5DF1120013C4D84913C690D09172F6B30BF6F6AE41225F267",
-    "source/evejs_dlss5_nr_state.hpp": "E62F8595D324C3404B7298EEBBE4EC879469C6D684AC905BC68F735871C50E2C",
-    "source/evejs_dlss5_nr_state_tests.hpp": "7D03011689DFBBBAE0E2E9B7FD13B909066F92137C460017A4AF74839807C390",
-    "res/version.h": "8DF866366AE60CA4A206DD0DEA610CDFEC0D475DA72CD696F71559885C46EBD4"
+    "source/evejs_dlss5_nr_state.hpp": "FBCBE4933C151DF9E430FBCA91C05BDED05225302C07F61A798D154C6C7EE2F7",
+    "source/evejs_dlss5_nr_state_tests.hpp": "3F67F5E20258D5725FB6146B95D5333844DEF581ABBE99BF4649C0D6EA20F18A",
+    "res/version.h": "7275B979E788A724F8E72DA4C81381BC030228244FD76FF92C8CC8DE55D4D3C0"
   },
   "submodules": {
     "imgui": "3912b3d9a9c1b3f17431aebafd86d2f40ee6e59c",
@@ -98,5 +47,92 @@
     "openxr": "288d3a7ebc1ad959f62d51da75baa3d27438c499",
     "jxl_simple_lossless": "8dc970fc771e35239db55dfbce8f46f83f8e9b73"
   },
-  "knownLimit": "Physical F6 retains its sampled-focus limitations. The NR tracker observes recognized messages from the registered local RenoDX module, not a GPU fence. Hidden tests do not exercise actual RenoDX registration or game rendering; manual initial-state and two-client transition tests remain pending."
+  "toolchain": {
+    "msbuild": "17.14.40.60911",
+    "msvcToolsetDirectory": "14.44.35207",
+    "windowsSdk": "10.0.26100.0"
+  },
+  "nativeSelfTest": {
+    "exitCode": 0,
+    "f6PolicyChecks": 294,
+    "nrTrackerChecks": 59,
+    "readonlyExportAbiChecks": "passed",
+    "physicalOrSyntheticInputGenerated": false
+  },
+  "actualLogRegression": {
+    "releasedObserverFailures": 6,
+    "fixedObserverChecks": 97,
+    "fixedObserverFailures": 0,
+    "startupIsNeverToggleAcknowledgement": true
+  },
+  "buildOnlyInputs": {
+    "conditionPatch": "build-only-glad-condition.patch",
+    "conditionPatchSha256": "3c27c7ada690358eb14d572dfbbe3300687117385f3b08f72fcac7bba7c2487d",
+    "offlineDriver": "offline-glad.py",
+    "offlineDriverSha256": "4e33c85552e5bb2ea223241ca07ff5c6d01fafbdbb433721b80a89fd1ed04960",
+    "specifications": [
+      {
+        "name": "gl.xml",
+        "sha256": "26476646e9446dc3963bdacf7d698700e1c48c148484c39b0ff166c00dc64cc3"
+      },
+      {
+        "name": "wgl.xml",
+        "sha256": "3ab52ec2efa5b2800a68caaf39583c532fe25441e5b3989687d9a03ee8473755"
+      },
+      {
+        "name": "vk.xml",
+        "sha256": "b527fa6afeb508ae71cc5859c43593458ffabbd92a03e545450b6e6c5a73af28"
+      }
+    ],
+    "generatedFiles": [
+      {
+        "path": "target/include/glad/gl.h",
+        "sha256": "ae401e254d99551134d25f0195cee7521a8fd7bb910c9807316dd3eb7fd8e332"
+      },
+      {
+        "path": "target/include/glad/vulkan.h",
+        "sha256": "5e41616dccc81ffc8a9031b1c1bded817cef6ce76b4605092ccb4600a83656b8"
+      },
+      {
+        "path": "target/include/glad/wgl.h",
+        "sha256": "f6095895aae18e9018c33933cbd15c493fb96cee50a884e5e68a57f54cd9574d"
+      },
+      {
+        "path": "target/include/KHR/khrplatform.h",
+        "sha256": "7b1e01aaa7ad8f6fc34b5c7bdf79ebf5189bb09e2c4d2e79fc5d350623d11e83"
+      },
+      {
+        "path": "target/include/vk_platform.h",
+        "sha256": "b16f5a77e098b4acec27831b06e6c6942f11b47ce03eaa28ea9853151ff160e8"
+      },
+      {
+        "path": "target/src/gl.c",
+        "sha256": "2c047e64a99b7a525affadc900f52eab641d9c659a28fc30cbe694e2b2304a33"
+      },
+      {
+        "path": "target/src/vulkan.c",
+        "sha256": "966eb1302b25a002f3521eb3a29dd4398f06f1c99de95770e785f3a4379dd62d"
+      },
+      {
+        "path": "target/src/wgl.c",
+        "sha256": "655e167d388538dbca578c5d11327d377b3997c2cd8ee4279f82c7f17c06931b"
+      }
+    ],
+    "noPipOrNetworkDuringGeneration": true
+  },
+  "byteReproducibleBuildProven": false,
+  "manualGameValidationComplete": true,
+  "guardContractUnchanged": "UNKNOWN/OFF/ON, registered-module identity, bounds, exact terminal ON/OFF, duplicate rejection, toggle=false for every startup snapshot, epochs and F6 acknowledgements retained.",
+  "runtimeValidation": {
+    "evejs": "261108.1",
+    "clientBuild": "3396210",
+    "backend": "DX12",
+    "nativeNrState": "ON",
+    "successfulFeature18Evaluations": 600,
+    "physicalF6OffOnUserConfirmed": true,
+    "realToggleSequence": 2,
+    "automaticProcessLocalF6ProbePassed": false,
+    "automaticGraphicsTransitionSynchronizationQualified": false,
+    "published": false
+  }
 }

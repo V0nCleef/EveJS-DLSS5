@@ -5,7 +5,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:AdapterVersion = '0.5.12'
+$script:AdapterVersion = '0.5.13'
 . (Join-Path $PSScriptRoot 'ReShade-Lists.ps1')
 $script:Utf8 = New-Object Text.UTF8Encoding($false)
 $script:PackageRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot)).TrimEnd('\')
@@ -175,6 +175,10 @@ function Get-ProfilePreparation {
     $earlyLoad=if ($values.Contains($earlyLoadKey)) { [string]$values[$earlyLoadKey].value } else { '' }
     Set-PrivateIniValue $values 'ADDON' 'LoadFromDllMain' (Add-ReShadeListItem $earlyLoad 'renodx-dlss5.addon64')
     Set-PrivateIniValue $values 'RenoDX.DLSS5' 'EnableHooks' '2'
+    # The public UI and authenticated process-local bridge expose fixed F6.
+    # RenoDX 7 inherited/default NUM PLUS (107) cannot acknowledge that bridge.
+    # Normalize only this private profile; shared/user INI files stay untouched.
+    Set-PrivateIniValue $values 'RenoDX.DLSS5' 'NRToggleKey' '117'
     # Existing/F6-persisted values win over form defaults during first import.
     # An explicit settings Save already writes the new private destination.
     Set-PrivateIniValue $values 'RenoDX.DLSS5' 'NeuralUplift' '1' -Preserve

@@ -1,12 +1,6 @@
-# Local source generation — package 0.5.12 / payload 0.5.11 / V13 guard
+# Local source generation — package/payload 0.5.13, V13 client guard
 
-Package version is **0.5.12**; integration payload version remains **0.5.11**.
-This release changes verification and removal scripts, with no renderer-source or binary change. The two known
-build 3396210 archives still have reviewed reference outputs. A compatible
-archive with unrelated mod changes now gets a locally derived output, whose
-original and installed identities are recorded in the client's rollback journal.
-The RenoDX 7.0.0-rc8, ReShade 6.8.0.10/EveJS V11 and NVIDIA binaries are
-unchanged from 0.5.10.
+This candidate changes the authenticated native ReShade observer and its binary only. The two generated client-code entries, authored Python templates/tools and pinned NVIDIA/RenoDX binaries remain unchanged. Both known build 3396210 variants retain their exact reviewed generated outputs. See source/reshade/provenance.json for the new native source/build identity.
 
 The Python 2.7 builder checks the complete input hash at each stage and requires
 the exact reviewed PYC in each of the two entries it changes. It checks the

@@ -1,3 +1,12 @@
+# 0.5.13 — unpublished local candidate
+
+- Fix the registered local RenoDX 7 startup report (intensity=... enabled=ON/OFF) being rejected by the legacy ReShade observer. Preserve the older upscaling= format.
+- Preserve UNKNOWN state for unrecognized reports, module identity, bounded input, exact ON/OFF, duplicate-token rejection, epochs and genuine F6 acknowledgement sequences.
+- Rebuild ReShade as 6.8.0.11 / EveJS V12; preserve all named/unnamed export ordinals and imported DLL set.
+- Normalize private RenoDX profiles to F6 (117), including inherited NUM PLUS bindings, without changing shared settings.
+- Private DX12 native NR ON and 600 successful neural evaluations passed; physical F6 OFF→ON was user-confirmed and logged. Guarded update/rollback and normal helper regressions passed.
+- Known limitation: the bounded process-local synthetic F6 probe did not acknowledge; automatic graphics-transition NR synchronization remains unqualified and can refuse safely. Local candidate only; no publication.
+
 # 0.5.12 — 2026-10-29
 
 - Verify the installed physical client without requiring the currently selected EveJS server to be attached.

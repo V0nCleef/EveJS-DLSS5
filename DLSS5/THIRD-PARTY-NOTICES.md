@@ -18,10 +18,10 @@ This project distributes a modified derivative, not an official ReShade build.
 
 Modifications: D3D12 destruction-callback lifetime guards, foreground-isolated
 physical F6, a PID-scoped F6 bridge, and the read-only process-local NR state and
-acknowledgement API. The 6.8.0.10 candidate is documented in
+acknowledgement API. The 6.8.0.11 candidate is documented in
 `source/reshade/provenance.json`; its complete derivative source patch is
-`source/reshade/reshade-6.8.0-evejs-v11.patch`, with the pinned version header at
-`source/reshade/version-6.8.0.10.h`. This binary is unsigned and unchanged from
+`source/reshade/reshade-6.8.0-evejs-v12.patch`, with the pinned version header at
+`source/reshade/version-6.8.0.11.h`. This rebuilt native binary is unsigned; the preceding package baseline was
 the previously user-tested native/V12 runtime. Those historical passes are not
 manual acceptance of the final package/launcher. A byte-identical clean rebuild
 has not been demonstrated; see `source/reshade/BUILDING.md`.

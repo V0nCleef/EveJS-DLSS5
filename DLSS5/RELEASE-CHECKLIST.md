@@ -1,25 +1,11 @@
-# 0.5.12 release verification
+# 0.5.13 local candidate validation
 
-- Launcher 1.0.76 removes DLSS lifecycle checks from character launch; the user confirmed character startup and DLSS operation with the tested launcher and local lifecycle fixes.
-- Verification uses the recorded physical-client context even when the selected server has no attachment.
-- Global removal works with the former server absent and without requiring its configuration backup. Client-file drift checks and verified replacement-file backups remain required before any restore.
-- Disposable copied-client checks cover restore, repeat removal, ordinary DLSS preservation and refusal to overwrite a changed DLL. Live client binaries are not changed by these checks.
-- Private graphics preferences use one stable profile directory across EveJS upgrades. A partial settings draft retains the shared defaults on first preparation.
-- Package version is 0.5.12; renderer payload identity remains 0.5.11. NVIDIA, RenoDX, ReShade and generated-client payloads are unchanged.
+Passed: pinned source/submodule reconstruction; all eleven prior derivative/header hashes matched before edits; 97 production-header regressions (released observer reproduced six failures); compiled hidden app 294 F6 policy / 59 NR tracker / readonly ABI checks; all export ordinals and imported DLL set preserved; complete V12 patch round trip.
 
-## Retained renderer and packaging verification
+Passed: ten guarded install/owner refusal/drift refusal/update/rollback/idempotence checks; six actual helper profile-binding cases; twelve exact manifest version-contract cases. Normal helper output uses F6 from inherited 107 with no key override in the input draft. Original shared client, installation journal and old runtime remain unchanged.
 
-- Schema 3 mod package; launcher integration requires 1.0.68 or newer.
-- Adapter manager calls use the launcher's remaining operation budget instead of a fixed 110-second cutoff.
-- The generated client archive accepts unrelated ZIP entry changes while requiring the exact two reviewed source PYCs. The original and derived archive identities are recorded for rollback and verification.
-- Stable update ZIP and companion metadata carry the same mod ID and version. No EveJS server version constraint.
-- Packaging checks validate the shipping allowlist, source/tool hashes and retained third-party notices.
-- Isolated provider tests cover installation, private profile preparation, update, removal and original-file restoration.
-- Focused copied-client checks cover rendering, physical F6, two-client isolation, DLSS transitions and interrupted settling/retry.
-- Test coverage is bounded: not every GPU, device failure or combination of mods was reproduced.
-- Both known build 3396210 variants remain supported. RenoDX 7.0.0-rc8, ReShade and NVIDIA payloads are unchanged from 0.5.10.
-- The live EVE test on RTX 5090 and NVIDIA driver 617.14 used the included EveJS 0.12.9 client variant.
-- Installation and rendering with Foxtrot32's modified archive are not yet verified.
-- Public delivery is verified by downloading and comparing the final release assets.
+Passed: private DX12 EVE 3396210 on EveJS 261108.1, native DLSS Quality and NR ON, official runtime verification with 600 successful feature-18 evaluations, inspected 2560×1440 rendered scene. Josh confirmed physical F6 OFF then ON; exact current log reports both and native ABI reports ON/toggleSequence 2. Owned client and isolated backend were closed; the existing world was preserved.
 
-Retain older release packages and recovery backups. Never publish copied client archives, user state or downloaded third-party cache material.
+Limitation: the process-local synthetic F6 export accepted DOWN/UP but timed out waiting for a real acknowledgement. Automatic NR synchronization and graphics transitions requiring it remain unqualified and can refuse safely. This is distinct from the passing physical F6 path. The unchanged verifier also reported 28 registration warnings during early addon loading; signed runtime initialization and actual evaluations passed.
+
+Final package allowlist and ZIP entry/hash checks are performed by Build-PublicCandidate.ps1. The package is local and unpublished; wider all-mod user testing and explicit publication approval remain pending. No FPS/image-quality/universal compatibility claim. Retain original client backups and one previous payload rollback.

@@ -1,0 +1,22 @@
+diff --git a/deps/glad.vcxproj b/deps/glad.vcxproj
+index 792c395..c91b622 100644
+--- a/deps/glad.vcxproj
++++ b/deps/glad.vcxproj
+@@ -126,7 +126,9 @@
+   <Target Name="CleanGladSources">
+     <Delete Files="@(ClCompile);@(ClInclude);" />
+   </Target>
+-  <Target Name="GenerateGladSources" Condition="!Exists(@(ClCompile))">
++  <!-- Build-only offline harness: the item-list Exists form can re-enter pip
++       even with authenticated generated sources. Not a shipped renderer edit. -->
++  <Target Name="GenerateGladSources" Condition="!Exists('glad\target\src\gl.c') Or !Exists('glad\target\src\wgl.c') Or !Exists('glad\target\src\vulkan.c')">
+     <PropertyGroup>
+       <GladLanguage>c</GladLanguage>
+       <GladQuietSwitch Condition="'$(GladQuiet)'=='true'">--quiet</GladQuietSwitch>
+@@ -147,4 +149,4 @@
+     </ItemGroup>
+     <Delete Files="@(GladSpecificationsTemp)" />
+   </Target>
+-</Project>
+\ No newline at end of file
++</Project>

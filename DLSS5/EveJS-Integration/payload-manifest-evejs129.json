@@ -1,6 +1,6 @@
 {
   "schemaVersion": 5,
-  "integrationVersion": "0.5.11",
+  "integrationVersion": "0.5.13",
   "clientBuild": 3396210,
   "artifacts": [
     {
@@ -188,14 +188,14 @@
     },
     {
       "id": "reshade-evejs",
-      "source": "26EBDD0C2AE67EED8D305BC8B7A3A67B606F74D19979EFDFE6E584ACB27B78BF\\ReShade64.dll",
+      "source": "FB1011F2F13A250FD5881415840433F8B77EC27F862338FFDD097DC511388C3A\\ReShade64.dll",
       "destination": "bin64\\dxgi.dll",
       "component": "reshade",
       "sourceKind": "bundled",
       "packagePath": "payload\\reshade\\ReShade64.dll",
-      "bytes": 5594112,
-      "sha256": "26EBDD0C2AE67EED8D305BC8B7A3A67B606F74D19979EFDFE6E584ACB27B78BF",
-      "version": "6.8.0.10 / EveJS V11 process-local NR state and F6 acknowledgement",
+      "bytes": 5594624,
+      "sha256": "FB1011F2F13A250FD5881415840433F8B77EC27F862338FFDD097DC511388C3A",
+      "version": "6.8.0.11 / EveJS V12 compatible process-local NR startup state",
       "licenseId": "reshade-bsd-3-clause"
     },
     {
