@@ -1,11 +1,20 @@
-# 0.5.13 local candidate validation
+# 0.5.14 local qualification candidate
 
-Passed: pinned source/submodule reconstruction; all eleven prior derivative/header hashes matched before edits; 97 production-header regressions (released observer reproduced six failures); compiled hidden app 294 F6 policy / 59 NR tracker / readonly ABI checks; all export ordinals and imported DLL set preserved; complete V12 patch round trip.
+Offline evidence: source target hashes and method signatures/control flow reviewed
+for build 3724492; real two-stage generation passed; only two of 13,171 archive
+entry occurrences changed; remaining occurrences/order and ZIP CRC retained.
+Old 3396210 variant output remains exactly pinned. ReShade/NVIDIA/RenoDX payload
+bytes and NR transition templates are unchanged.
 
-Passed: ten guarded install/owner refusal/drift refusal/update/rollback/idempotence checks; six actual helper profile-binding cases; twelve exact manifest version-contract cases. Normal helper output uses F6 from inherited 107 with no key override in the input draft. Original shared client, installation journal and old runtime remain unchanged.
+Required: authored adapter/transition/recovery regressions, build/executable
+selection and malformed/cross-build refusal cases, full source/manifest hash chain,
+candidate ZIP allowlist/hash verification, and preservation of old output hashes.
 
-Passed: private DX12 EVE 3396210 on EveJS 261108.1, native DLSS Quality and NR ON, official runtime verification with 600 successful feature-18 evaluations, inspected 2560×1440 rendered scene. Josh confirmed physical F6 OFF then ON; exact current log reports both and native ABI reports ON/toggleSequence 2. Owned client and isolated backend were closed; the existing world was preserved.
+Verified: actual copied 3724492 binary identities and a valid exact Fenris Python
+signature. PE image sections/imports/exports match the old runtime. Require normal
+isolated install/verify/restore; graphical lease and native DX12/DLSS/NR startup, physical
+F6, menu/resource changes, station/space and reconnect acceptance. Docker runtime
+and Linux/Proton are unverified. Synthetic F6 acknowledgement/automatic re-arm
+remains a known limitation. No live rendering, performance or visual-quality claim.
 
-Limitation: the process-local synthetic F6 export accepted DOWN/UP but timed out waiting for a real acknowledgement. Automatic NR synchronization and graphics transitions requiring it remain unqualified and can refuse safely. This is distinct from the passing physical F6 path. The unchanged verifier also reported 28 registration warnings during early addon loading; signed runtime initialization and actual evaluations passed.
-
-Final package allowlist and ZIP entry/hash checks are performed by Build-PublicCandidate.ps1. The package is local and unpublished; wider all-mod user testing and explicit publication approval remain pending. No FPS/image-quality/universal compatibility claim. Retain original client backups and one previous payload rollback.
+No release, upload, tag, push or public announcement is authorized by this check.

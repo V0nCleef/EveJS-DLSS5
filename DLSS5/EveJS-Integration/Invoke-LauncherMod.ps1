@@ -5,7 +5,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:AdapterVersion = '0.5.13'
+$script:AdapterVersion = '0.5.16'
 . (Join-Path $PSScriptRoot 'ReShade-Lists.ps1')
 $script:Utf8 = New-Object Text.UTF8Encoding($false)
 $script:PackageRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot)).TrimEnd('\')
@@ -59,6 +59,33 @@ function Read-ClientJournal {
     if ([int]$journal.schemaVersion -ne 5 -or [string]$journal.stateScope -cne 'client' -or
         -not (Get-PlainPath ([string]$journal.clientRoot)).Equals($Client,[StringComparison]::OrdinalIgnoreCase)) { throw 'The DLSS5 journal does not belong to this physical client.' }
     return $journal
+}
+
+function Initialize-MissingClientConfig {
+    param([string]$Client,[string]$EveJS)
+    $config=Get-PlainPath (Join-Path $EveJS 'tools\ClientSETUP\scripts\EvEJSConfig.bat')
+    if (Test-Path -LiteralPath $config) { return }
+    $example=Get-PlainPath (Join-Path (Split-Path -Parent $config) 'EvEJSConfig.example.bat')
+    if (-not (Test-Path -LiteralPath $example -PathType Leaf)) { return }
+    if ($Client -match '[%!"\r\n]' -or -not (Test-Path -LiteralPath (Join-Path $Client 'bin64\exefile.exe') -PathType Leaf)) {
+        throw 'Choose a separate EVE client path that can be written into the EveJS client configuration.'
+    }
+    $lines=[IO.File]::ReadAllLines($example)
+    $assignment='^\s*set\s+"EVEJS_CLIENT_PATH=[^"]*"\s*$'
+    if (@($lines -match $assignment).Count -ne 1 -or
+        @($lines -match '^\s*set\s+"EVEJS_CLIENT_EXE="\s*$').Count -ne 1) {
+        throw 'The EveJS client config example does not contain the expected client settings.'
+    }
+    $out=@(foreach ($line in $lines) {
+        if ($line -match $assignment) { 'set "EVEJS_CLIENT_PATH='+$Client+'"' } else { $line }
+    })
+    $staged=$config+'.'+[Guid]::NewGuid().ToString('N')+'.tmp'
+    try {
+        [IO.File]::WriteAllLines($staged,$out,$script:Utf8)
+        [IO.File]::Move($staged,$config)
+    } finally {
+        if (Test-Path -LiteralPath $staged) { Remove-Item -LiteralPath $staged }
+    }
 }
 
 function Invoke-BinaryManager {
@@ -275,7 +302,10 @@ try {
         $reply.message='Private ReShade settings are proposed for the launcher to apply.'
     } else {
         switch ([string]$request.action) {
-            'install' { Invoke-BinaryManager -Action Ensure -Client $client -EveJS $evejs }
+            'install' {
+                Initialize-MissingClientConfig -Client $client -EveJS $evejs
+                Invoke-BinaryManager -Action Ensure -Client $client -EveJS $evejs
+            }
             'verify' {
                 $ownerRoot=if ($null -ne $journal) { [string]$journal.evejsRoot } else { $evejs }
                 Invoke-BinaryManager -Action VerifyClient -Client $client -EveJS $ownerRoot

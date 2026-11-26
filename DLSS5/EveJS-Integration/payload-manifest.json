@@ -1,6 +1,6 @@
 {
   "schemaVersion": 5,
-  "integrationVersion": "0.5.13",
+  "integrationVersion": "0.5.16",
   "clientBuild": 3396210,
   "artifacts": [
     {
@@ -85,8 +85,8 @@
       {
         "id": "builder",
         "path": "client-patches\\tools\\build_code_ccp.py",
-        "bytes": 14303,
-        "sha256": "C25D61618E74C836359B7433358CBEA99AF37DFE48C6DB5A67159BC539F63E27"
+        "bytes": 15399,
+        "sha256": "72A63F99A5CD718138DDED61D5D0D5D9B4C06BED4796158DF54527030903530F"
       },
       {
         "id": "graphics-template",
@@ -109,8 +109,8 @@
       {
         "id": "reconstruct",
         "path": "client-patches\\tools\\reconstruct.py",
-        "bytes": 6502,
-        "sha256": "12ABB9F7EA33DF260C61CC1CF28E6A671683B39191ED7FD2E17EBB1C645D19A4"
+        "bytes": 6688,
+        "sha256": "DA7E13F55C515618BBA39759D87BA38ED26C9FCD234C85F213F248E2088DF747"
       },
       {
         "id": "native-bridge",

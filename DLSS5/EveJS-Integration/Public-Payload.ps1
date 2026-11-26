@@ -99,10 +99,10 @@ function Assert-PublicPayloadManifestContract {
     if ([int]$Manifest.schemaVersion -ne 5) {
         throw "Unsupported public payload schemaVersion '$($Manifest.schemaVersion)'."
     }
-    if (-not ([string]$Manifest.integrationVersion).Equals('0.5.13', [StringComparison]::Ordinal)) {
+    if (-not ([string]$Manifest.integrationVersion).Equals('0.5.16', [StringComparison]::Ordinal)) {
         throw "Unsupported public integrationVersion '$($Manifest.integrationVersion)'."
     }
-    if ([int]$Manifest.clientBuild -ne 3396210) {
+    if ([int]$Manifest.clientBuild -notin @(3396210, 3724492)) {
         throw "Unsupported client build '$($Manifest.clientBuild)'."
     }
 
@@ -180,7 +180,10 @@ function Assert-PublicPayloadManifestContract {
         [string]$firstStage.sha256 -ceq '65A3396C7B7A06E4A2BFE93AA6601600CE67F6D3E3232F7FEF323D6EB43C6E1D')
     $knownEveJS129Stage = ([Int64]$firstStage.bytes -eq 30761381 -and
         [string]$firstStage.sha256 -ceq '0E919E2109FE30AA651CF33DA25ED95AC9C4975273AE66208A39DCBAE74180BC')
-    if (-not ($knownPublicStage -or $knownEveJS129Stage)) {
+    $known3724492Stage = ([Int64]$firstStage.bytes -eq 32374401 -and
+        [string]$firstStage.sha256 -ceq 'D1ED0B80CAF1A82F1F3411C62A7186C9242CCC599B35D463CEBCD0A8D012F5B2')
+    if (-not (([int]$Manifest.clientBuild -eq 3396210 -and ($knownPublicStage -or $knownEveJS129Stage)) -or
+        ([int]$Manifest.clientBuild -eq 3724492 -and $known3724492Stage))) {
         throw 'Client guard intermediate archive does not match the reviewed V13 first-stage output.'
     }
     $startup = $Manifest.generator.startupPatch
@@ -193,10 +196,17 @@ function Assert-PublicPayloadManifestContract {
         [string]$startup.className -cne 'DeviceMgr' -or [string]$startup.methodName -cne 'CreateDevice') {
         throw 'Client startup patch target does not match the reviewed class/method/archive contract.'
     }
-    if ([Int64]$startup.originalPycBytes -ne 27911 -or
-        [string]$startup.originalPycSha256 -cne '924F5050A7476845B8DBBB4CC96032A14C7773FF18373D707B605A75821A6F61' -or
-        [Int64]$startup.patchedPycBytes -ne 30421 -or
-        [string]$startup.patchedPycSha256 -cne '58C9422BE7D76463EA749275B5459D380D49D473860D62A8DE55562064365E16') {
+    $knownOldStartup = ([int]$Manifest.clientBuild -eq 3396210 -and
+        [Int64]$startup.originalPycBytes -eq 27911 -and
+        [string]$startup.originalPycSha256 -ceq '924F5050A7476845B8DBBB4CC96032A14C7773FF18373D707B605A75821A6F61' -and
+        [Int64]$startup.patchedPycBytes -eq 30421 -and
+        [string]$startup.patchedPycSha256 -ceq '58C9422BE7D76463EA749275B5459D380D49D473860D62A8DE55562064365E16')
+    $knownNewStartup = ([int]$Manifest.clientBuild -eq 3724492 -and
+        [Int64]$startup.originalPycBytes -eq 27911 -and
+        [string]$startup.originalPycSha256 -ceq 'EC7A244CC695B460A14F59449F5B33CC43B8210BA4B85A04D7336FF3D029E881' -and
+        [Int64]$startup.patchedPycBytes -eq 30421 -and
+        [string]$startup.patchedPycSha256 -ceq '3FA1D5C0797E9F43E596D020418E47D2C2F3B4F4206B40DCD790EB82A3F47A72')
+    if (-not ($knownOldStartup -or $knownNewStartup)) {
         throw 'Client startup PYC contract does not match the reviewed V13 bytes.'
     }
     Assert-PublicObjectProperties -Value $Manifest.generator.pythonRuntime `
@@ -214,9 +224,10 @@ function Assert-PublicPayloadManifestContract {
         -Required @('status', 'publisher', 'subject', 'thumbprint') `
         -Allowed @('status', 'publisher', 'subject', 'thumbprint') `
         -Label 'Client guard Python runtime Authenticode contract'
+    $pythonPublisher = if ([int]$Manifest.clientBuild -eq 3724492) { 'Fenris Creations hf.' } else { 'CCP ehf.' }
     if (-not ([string]$Manifest.generator.pythonRuntime.authenticode.status).Equals('Valid', [StringComparison]::Ordinal) -or
-        -not ([string]$Manifest.generator.pythonRuntime.authenticode.publisher).Equals('CCP ehf.', [StringComparison]::Ordinal)) {
-        throw 'Client guard Python runtime must require the pinned valid CCP publisher.'
+        -not ([string]$Manifest.generator.pythonRuntime.authenticode.publisher).Equals($pythonPublisher, [StringComparison]::Ordinal)) {
+        throw 'Client guard Python runtime must require the pinned valid publisher for its exact client build.'
     }
     $pythonThumbprint = ([string]$Manifest.generator.pythonRuntime.authenticode.thumbprint -replace '\s', '')
     if ($pythonThumbprint -notmatch '^[0-9A-Fa-f]{40}$') {
@@ -482,7 +493,7 @@ function Get-VerifiedPublicArtifact {
             -Uri ([string]$Artifact.url) `
             -OutFile $staged `
             -TimeoutSec 900 `
-            -Headers @{ 'User-Agent' = 'EveJS-DLSS5/0.5.13' } | Out-Null
+            -Headers @{ 'User-Agent' = 'EveJS-DLSS5/0.5.16' } | Out-Null
         Assert-PublicFileRecord -Path $staged -Record $Artifact -Label "Downloaded artifact '$($Artifact.id)'" | Out-Null
         Move-StagedFileIntoPlace -StagedPath $staged -Destination $destination
     } finally {

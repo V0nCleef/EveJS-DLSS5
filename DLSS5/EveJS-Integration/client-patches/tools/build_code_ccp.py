@@ -52,7 +52,7 @@ def load_local_reconstruction(template_path, class_name, method_name):
     patches_path = utf8_path(sys.argv[0]).rsplit(u'\\', 2)[0]
     records = (
         ('local-source', u'tools\\local_source.py', 22010, '32CECE52FE521A6B7F301B861376DEFBE33AF6887931ACBBFEDE6E89FBCA55DC'),
-        ('reconstruct', u'tools\\reconstruct.py', 6502, '12ABB9F7EA33DF260C61CC1CF28E6A671683B39191ED7FD2E17EBB1C645D19A4'),
+        ('reconstruct', u'tools\\reconstruct.py', 6688, 'DA7E13F55C515618BBA39759D87BA38ED26C9FCD234C85F213F248E2088DF747'),
         ('graphics-template', u'templates\\systemmenu_apply_graphics.py.in', 11209, 'E94DCD476660F9299C22B0B2A84687453C7C3A921239634308CA18606A763326'),
         ('startup-template', u'templates\\device_create.py.in', 3631, '4CAAF43F262D4D87A922A67F23329D91235946894672AB387F4120BFF0710C40'),
         ('native-bridge', u'templates\\native_nr_bridge.py.in', 8424, 'BFCA54FF9005142B8A17E000A1F464C1FC4221092AA108A112DF29D7949B619E'),
@@ -127,6 +127,22 @@ def replace_direct_child(code, name, replacement):
     if replacements != 1:
         fail('expected to replace exactly one direct child named %s, replaced %d' % (name, replacements))
     return clone_with_consts(code, consts)
+
+
+def overlay_graphics_template(source):
+    # Build 3724492 keeps EVE's menu and treats the last manual NR choice
+    # as authoritative. The older reviewed client outputs are left intact.
+    entry = '            # The pending target can change during the disarm yield.'
+    commit = '            @LOCAL:graphics_commit@'
+    default = ("                        preferredNeuralRenderingState = 'ON'\n"
+               "                        gfxsettings._dlss5NRWantedV13 = 'ON'")
+    if source.count(entry) != 1 or source.count(commit) != 1 or source.count(default) != 1:
+        fail('graphics template preference anchors changed')
+    start, stop = source.index(entry), source.index(commit)
+    if stop <= start:
+        fail('graphics template preference anchors are out of order')
+    source = source[:start] + source[stop:]
+    return source.replace(default, default.replace("'ON'", "'OFF'"))
 
 
 if len(sys.argv) not in (8, 10, 11):
@@ -245,8 +261,10 @@ original_method = direct_child(original_class, method_name)
 # Only the authenticated authored helpers execute. Original and reconstructed
 # client modules/methods are parsed/compiled as data, never imported or called.
 reconstruct, ORIGINAL_PYC_HASHES, template_source = load_local_reconstruction(stub_path, class_name, method_name)
-if sha256(original_pyc) != ORIGINAL_PYC_HASHES[(class_name, method_name)]:
+if sha256(original_pyc) not in ORIGINAL_PYC_HASHES[(class_name, method_name)]:
     fail('original target PYC identity mismatch')
+if class_name == 'SystemMenu' and sha256(original_pyc) == '7900E9CF99CCE4AC2606A5DFAE943209898EC62E61040BAD6A44400E9C145B7D':
+    template_source = overlay_graphics_template(template_source)
 stub_source = reconstruct(original_method, template_source, class_name, method_name)
 stub_module = compile(stub_source, embedded_filename, 'exec')
 stub_class = direct_child(stub_module, class_name)

@@ -1,3 +1,13 @@
+# 0.5.14 — local offline qualification candidate
+
+- Pin the reviewed Fenris-signed Python runtime for 3724492 while retaining the exact CCP contract for 3396210.
+- Add a pinned 3724492 menu/device archive port while retaining both 3396210 routes.
+- Select the client manifest by build plus executable identity; reject ambiguous
+  build declarations and unknown pairs.
+- Preserve old generated outputs, templates, native payloads and NR guard policy.
+- Copied-client runtime identity/install and live graphics acceptance remain
+  pending. This candidate is unpublished; known synthetic F6/re-arm limits remain.
+
 # 0.5.13 — unpublished local candidate
 
 - Fix the registered local RenoDX 7 startup report (intensity=... enabled=ON/OFF) being rejected by the legacy ReShade observer. Preserve the older upscaling= format.
@@ -245,3 +255,9 @@ V9 F6 bridge, live game data, active laboratory package or launcher binaries.
 Known release gates: launcher first-download timeout and new trust pin,
 exact-candidate manual testing, licensing of the compatibility source and
 first-party code, forced-cancellation cleanup, future binary-version upgrades.
+# 0.5.16
+
+- Restore EVE's original Upscaling menu on client build 3724492.
+- Control Neural Rendering from ReShade with Home or toggle it with F6.
+- Preserve the last manual Neural Rendering choice across graphics transitions.
+

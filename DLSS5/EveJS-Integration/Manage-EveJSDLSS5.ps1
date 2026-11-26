@@ -105,6 +105,7 @@ $script:ExePath = Join-Path $script:BinRoot "exefile.exe"
 $script:ConfigPath = Join-Path $script:EveJSRoot "tools\ClientSETUP\scripts\EvEJSConfig.bat"
 $script:PayloadManifestPath = Join-Path $script:IntegrationRoot "payload-manifest.json"
 $script:AlternatePayloadManifestPath = Join-Path $script:IntegrationRoot "payload-manifest-evejs129.json"
+$script:Build3724492PayloadManifestPath = Join-Path $script:IntegrationRoot "payload-manifest-3724492.json"
 $script:PublicPayloadHelperPath = Join-Path $script:IntegrationRoot "Public-Payload.ps1"
 $script:StateDirectory = $StateDirectory
 $expectedClientStateRoot = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $script:ClientRoot) "_evejs\dlss5\install")).TrimEnd("\\")
@@ -129,15 +130,48 @@ $script:PendingTransactionPath = Join-Path $script:StateRoot "pending-profile-tr
 $script:ProfileTransaction = $null
 $script:ExpectedExeSha256 = "2AAF7A9A8DFCDE85E4ADB50C1ECCD3756A4D29AEB854DFE69629846BA56EE979"
 $script:AlternateExeSha256 = "5A26F6B9838963D6B687D433F4B11CB28BD1CF3A1670AD691D2DF394C88CD575"
-$script:ExpectedPublicPayloadHelperSha256 = "8C32AE4413E09BAB30A9D9074B05534F61284C756C3EB2FAB9DE8F746AD270A4"
-$script:ExpectedPayloadManifestSha256 = "CCAE4CBD5A27256FC732A4C149FEFFF4495E41E690C137ED4E499F4DD2EF44FE"
-$script:AlternatePayloadManifestSha256 = "CB86E80DBCC488603D2421218897701AD782B3E4F9158099208E89B840F75133"
+$script:ExpectedPublicPayloadHelperSha256 = "37FEAA93F8B56203A742630BCE91BFBF982E3787E6C61E68F17764F0FE20BEFC"
+$script:ExpectedPayloadManifestSha256 = "805DC3F63C9A96929389FB5EB4DA70545C4AFE105F3033AA6F5BEF59B0ABD179"
+$script:AlternatePayloadManifestSha256 = "714A2C1A899C4F9038C2918E34C788CF76FF8A7FE708EE7CAF926AE87B5CB739"
+$script:Build3724492PayloadManifestSha256 = "7A865D3699A28594920F8CE3367D4851071C19E1377E5F0C112D3D68D1D92A10"
+$script:ExpectedClientBuild = '3396210'
+
+function Get-LiteralClientBuild {
+    param([string]$Text)
+    $candidates = [Regex]::Matches($Text, '(?im)^\s*build\s*=.*$')
+    if ($candidates.Count -ne 1 -or $candidates[0].Value -notmatch '^\s*build\s*=\s*([0-9]+)\s*$') { return $null }
+    return $Matches[1]
+}
+
+function Get-ReviewedClientVariant {
+    param([string]$Build,[string]$ExeSha256)
+    if ($Build -ceq '3396210' -and $ExeSha256 -ieq '2AAF7A9A8DFCDE85E4ADB50C1ECCD3756A4D29AEB854DFE69629846BA56EE979') { return 'public3396210' }
+    if ($ExeSha256 -ieq '5A26F6B9838963D6B687D433F4B11CB28BD1CF3A1670AD691D2DF394C88CD575') {
+        if ($Build -ceq '3396210') { return 'evejs129' }
+        if ($Build -ceq '3724492') { return 'build3724492' }
+    }
+    return $null
+}
+
 if (Test-Path -LiteralPath $script:ExePath -PathType Leaf) {
     $selectedExeHash = (Get-FileHash -LiteralPath $script:ExePath -Algorithm SHA256).Hash
+    $selectedBuild = $null
+    $selectedIni = Join-Path $script:ClientRoot 'start.ini'
+    if (Test-Path -LiteralPath $selectedIni -PathType Leaf) { $selectedBuild = Get-LiteralClientBuild ([IO.File]::ReadAllText($selectedIni)) }
+    $selectedVariant = Get-ReviewedClientVariant -Build $selectedBuild -ExeSha256 $selectedExeHash
+    # Retain recovery's historical executable-only identity when start.ini is
+    # missing or damaged. Installation still requires the exact build below.
     if ($selectedExeHash.Equals($script:AlternateExeSha256, [StringComparison]::OrdinalIgnoreCase)) {
         $script:ExpectedExeSha256 = $script:AlternateExeSha256
         $script:PayloadManifestPath = $script:AlternatePayloadManifestPath
         $script:ExpectedPayloadManifestSha256 = $script:AlternatePayloadManifestSha256
+    }
+    # The same executable hash is used by two builds; a new manifest requires
+    # the independently parsed build identity as well.
+    if ($selectedVariant -eq 'build3724492') {
+        $script:ExpectedClientBuild = '3724492'
+        $script:PayloadManifestPath = $script:Build3724492PayloadManifestPath
+        $script:ExpectedPayloadManifestSha256 = $script:Build3724492PayloadManifestSha256
     }
 }
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -1858,8 +1892,8 @@ function Assert-WorkspaceLayout {
     }
 
     $startIni = Get-Content -LiteralPath (Join-Path $script:ClientRoot "start.ini") -Raw
-    if ($startIni -notmatch '(?m)^build\s*=\s*3396210\s*$') {
-        throw "The copied client is not the expected build 3396210."
+    if ((Get-LiteralClientBuild $startIni) -cne $script:ExpectedClientBuild) {
+        throw "The copied client is not the expected build $script:ExpectedClientBuild."
     }
     if ($startIni -notmatch '(?m)^server\s*=\s*127\.0\.0\.1\s*$') {
         throw "The copied client is not configured for the local EveJS server."

@@ -1,6 +1,17 @@
-# Local source generation — package/payload 0.5.13, V13 client guard
+# Local source generation — 0.5.14 candidate, V13 client guard
 
-This candidate changes the authenticated native ReShade observer and its binary only. The two generated client-code entries, authored Python templates/tools and pinned NVIDIA/RenoDX binaries remain unchanged. Both known build 3396210 variants retain their exact reviewed generated outputs. See source/reshade/provenance.json for the new native source/build identity.
+The offline 3724492 port adds two reviewed target-module identities to the narrow
+reconstructor and a separate build/manifest route. Both target methods retain the
+old derived instruction/control-flow shapes; authored graphics/startup/bridge
+templates are unchanged. Existing build 3396210 generated outputs remain exact.
+The bundled ReShade and pinned NVIDIA/RenoDX payload bytes are unchanged.
+
+The port reproduces the same reviewed outputs with each build's exact runtime.
+The 3724492 Python DLL is image-identical outside checksum/security metadata and
+its valid Fenris signature overlay. Its separate exact runtime/certificate pins
+leave the old CCP contract unchanged. Actual renderer file identities were read;
+no native renderer or GPU execution is implied. Require isolated installer and
+live graphics acceptance. This candidate is local and unpublished.
 
 The Python 2.7 builder checks the complete input hash at each stage and requires
 the exact reviewed PYC in each of the two entries it changes. It checks the

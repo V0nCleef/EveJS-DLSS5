@@ -1,11 +1,40 @@
-# EveJS DLSS5 + ReShade 0.5.13 — local candidate
+# DLSS 5 Neural Rendering + ReShade 0.5.16
 
-This unpublished candidate fixes RenoDX 7.0.0-rc8 startup NR state detection. ReShade now accepts the current authenticated intensity= report alongside the legacy upscaling= report. Private profiles normalize the RenoDX NR binding to F6 (117), including profiles inheriting NUM PLUS (107). Shared settings remain untouched.
+In EVE 24.02 build 3724492, use EVE's graphics menu to choose the upscaler, quality
+preset and Frame Generation. Press Home for the ReShade overlay or F6 to toggle
+DLSS 5 Neural Rendering. This candidate uses EVE's installed DLSS libraries.
 
-Requires EVE client build 3396210 and EveJS Launcher 1.0.76 or newer. Close clients using the physical installation before updating. Use the journal's recorded owner context for the normal payload update, then verify from the selected server through the existing owner fallback. Preserve original-install backups and one previous payload. Never edit or rebind an installation journal.
+The two supported build 3396210 variants retain their reviewed archive outputs.
+Build 3724492 preserves EVE's original Upscaling dropdown and uses its graphics
+apply and device-startup guards to manage renderer transitions. When you return to
+DLSS, the guard can restore the last known Neural Rendering choice for that session.
 
-Validated on EveJS 261108.1 with a private DX12 client: DLSS Quality, native NR ON, 600 successful feature-18 evaluations, an inspected rendered scene, and user-confirmed physical F6 OFF→ON corroborated by actual log acknowledgements and native toggle sequence 2. Guarded install/update/rollback, source/native checks, exact-version contracts and normal profile binding checks passed. NVIDIA, RenoDX and generated client-code payload bytes are unchanged; ReShade is 6.8.0.11.
+The installer selects a manifest using the build number together with the exact
+executable hash, because an executable identity is shared between known builds.
+Unknown build/executable pairs and changed patch-target entries are rejected.
 
-Known limitation: a bounded process-local synthetic F6 probe accepted press/release but received no acknowledgement within 2.5 seconds. Automatic NR synchronization uses that export, so a graphics transition requiring an automatic NR change may refuse safely. That path remains unqualified; physical F6 and saved-DLSS startup passed. No acknowledgement or state guard was weakened.
+## Qualification limits
 
-This is a local test candidate, with no published download or FPS/image-quality/universal GPU claim. See RELEASE-CHECKLIST.md and source/reshade/BUILDING.md.
+Offline archive generation, entry preservation, helper/transition/recovery tests
+and package integrity checks are required. The actual 3724492 runtime and renderer
+identities have been inspected. Its Python PE sections/imports/exports match the
+old runtime; its valid Fenris signature is pinned separately by hash, size, subject
+and certificate. Build 3396210 retains its original exact CCP contract. Require
+an isolated install/verify/restore pass before live DX12/DLSS/NR acceptance.
+
+The known synthetic F6 acknowledgement and automatic NR re-arm limitation remains.
+Passing source fixtures does not establish successful live neural rendering.
+
+## Platforms and backends
+
+This is a Windows x64 client package requiring Windows PowerShell 5.1 and the
+reviewed NVIDIA/RenoDX stack. DX12 is the DLSS5 route. Native and Docker server
+backends are declared; Docker runtime acceptance is unverified here. Server-side
+Linux support does not qualify the client mod. Linux native, Wine/Proton and Steam
+Deck installation/rendering remain unqualified.
+
+Keep the original client backups and install journal. Do not apply this local
+candidate to a live/shared client while qualification is incomplete. Installation,
+verification and removal remain owned by the mod's existing launcher helper and
+standalone manager. Generated client archives and copied runtime DLLs are private
+build-local files and are excluded from the package.

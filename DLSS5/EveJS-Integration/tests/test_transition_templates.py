@@ -103,10 +103,17 @@ class Runtime:
             uthread=SimpleNamespace(new=self.scheduled.append),
         )
 
-    def load(self, filename, slots):
+    def load(self, filename, slots, *, overlay=False):
         source = (TEMPLATES / filename).read_text(encoding="utf-8")
         fragment = (TEMPLATES / "native_nr_bridge.py.in").read_text(encoding="utf-8")
         source = source.replace("        @SHARED:native_nr_bridge@", fragment.rstrip("\n"))
+        if overlay:
+            builder = (TEMPLATES.parent / "tools/build_code_ccp.py").read_text(encoding="utf-8")
+            start = builder.index("def overlay_graphics_template(")
+            end = builder.index("if len(sys.argv) not in", start)
+            functions = {}
+            exec(builder[start:end], functions)
+            source = functions["overlay_graphics_template"](source)
         source = re.sub(r"@LOCAL:([a-z_]+)@", lambda m: slots[m[1]], source)
         tree = ast.parse(source)
         method = tree.body[0].body[0]
@@ -116,7 +123,7 @@ class Runtime:
         exec(compile(tree, str(TEMPLATES / filename), "exec"), env)
         return env[tree.body[0].name]()
 
-    def menu(self):
+    def menu(self, *, overlay=False):
         menu = self.load("systemmenu_apply_graphics.py.in", {
             "graphics_setup": "pass", "current_query": "self.tech",
             "target_getter": "gfxsettings.Get('tech')",
@@ -127,12 +134,27 @@ class Runtime:
             "upscaling_call": "self.tech = targetUpscalingTechnique; self.preset = gfxsettings.Get('preset')",
             "ready_condition": "self.not_ready", "panel_refresh": "pass",
             "graphics_event": "pass", "crash_key": "pass", "window_guard": "pass",
-        })
+        }, overlay=overlay)
         menu.tech, menu.preset, menu.not_ready = "DLSS", 0, False
         return menu
 
     def device(self):
         return self.load("device_create.py.in", {"startup_body": "pass"})
+
+
+@pytest.mark.parametrize("preference,final_state", [(None, 1), ("OFF", 1), ("ON", 2)])
+def test_overlay_leaves_nr_off_on_dlss_entry_unless_user_wanted_on(preference, final_state):
+    runtime = Runtime()
+    menu = runtime.menu(overlay=True)
+    runtime.graphics.current["tech"] = menu.tech = "FSR"
+    runtime.graphics.pending["tech"] = "DLSS"
+    runtime.snapshot["state"] = 1
+    if preference is not None:
+        runtime.graphics._dlss5NRWantedV13 = preference
+    menu.ApplyGraphicsSettings()
+    assert menu.tech == "DLSS"
+    assert runtime.snapshot["state"] == final_state
+    assert runtime.automatic_toggles == int(final_state == 2)
 
 
 @pytest.mark.parametrize("new_change", [False, True])
